@@ -1,0 +1,5 @@
+run_root: runs
+db_path: runs/rlflow.db
+execution:
+  default_backend: slurm
+  cluster: example

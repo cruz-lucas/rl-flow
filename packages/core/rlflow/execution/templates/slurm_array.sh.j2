@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+#SBATCH --job-name={{ sweep.sweep_id }}
+#SBATCH --output={{ sweep.sweep_dir }}/logs/slurm-array-%A_%a.out
+#SBATCH --error={{ sweep.sweep_dir }}/logs/slurm-array-%A_%a.err
+#SBATCH --time={{ options.time }}
+{% if options.nodes -%}
+#SBATCH --nodes={{ options.nodes }}
+{% endif -%}
+{% if options.ntasks -%}
+#SBATCH --ntasks={{ options.ntasks }}
+{% endif -%}
+#SBATCH --cpus-per-task={{ options.cpus_per_task }}
+#SBATCH --mem={{ options.mem }}
+#SBATCH --array=0-{{ last_index }}{% if max_parallel %}%{{ max_parallel }}{% endif %}
+{% if options.partition -%}
+#SBATCH --partition={{ options.partition }}
+{% endif -%}
+{% if options.account -%}
+#SBATCH --account={{ options.account }}
+{% endif -%}
+{% if options.gres -%}
+#SBATCH --gres={{ options.gres }}
+{% endif -%}
+{% if options.constraint -%}
+#SBATCH --constraint={{ options.constraint }}
+{% endif -%}
+{% if options.qos -%}
+#SBATCH --qos={{ options.qos }}
+{% endif -%}
+{% if options.reservation -%}
+#SBATCH --reservation={{ options.reservation }}
+{% endif -%}
+{% if options.mail_user -%}
+#SBATCH --mail-user={{ options.mail_user }}
+{% endif -%}
+{% if options.mail_type -%}
+#SBATCH --mail-type={{ options.mail_type }}
+{% endif %}
+set -euo pipefail
+
+COMMANDS=(
+{% for task in tasks -%}
+  {{ task.command }}
+{% endfor -%}
+)
+
+RUN_DIRS=(
+{% for task in tasks -%}
+  {{ task.run_dir }}
+{% endfor -%}
+)
+
+TASK_ID="${SLURM_ARRAY_TASK_ID:?SLURM_ARRAY_TASK_ID is required}"
+COMMAND="${COMMANDS[$TASK_ID]}"
+RUN_DIR="${RUN_DIRS[$TASK_ID]}"
+
+mkdir -p "{{ sweep.sweep_dir }}/logs" "$RUN_DIR/logs"
+cd "$RUN_DIR"
+
+{% for key, value in options.env.items() -%}
+export {{ key }}="{{ value }}"
+{% endfor -%}
+{% for module in options.modules -%}
+module load {{ module }}
+{% endfor -%}
+{% if options.venv_path -%}
+source "{{ options.venv_path }}/bin/activate"
+{% endif -%}
+{% if options.conda_env -%}
+conda activate "{{ options.conda_env }}"
+{% endif -%}
+{% for line in options.preamble -%}
+{{ line }}
+{% endfor %}
+bash "$COMMAND"

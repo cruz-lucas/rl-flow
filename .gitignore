@@ -179,3 +179,12 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# rl-flow generated artifacts
+node_modules/
+apps/web/dist/
+apps/web/.vite/
+apps/web/tsconfig.tsbuildinfo
+runs/
+*.db
+.DS_Store

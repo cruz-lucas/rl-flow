@@ -1,0 +1,13 @@
+{
+  "name": "rl-flow",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @rl-flow/web dev",
+    "build": "pnpm --filter @rl-flow/web build",
+    "test": "pnpm --filter @rl-flow/web test"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  },
+  "packageManager": "pnpm@9.0.0"
+}

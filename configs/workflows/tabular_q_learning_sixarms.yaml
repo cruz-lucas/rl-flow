@@ -1,0 +1,45 @@
+name: tabular_q_learning_sixarms
+description: Builtin JAX tabular Q-learning on the SixArms benchmark.
+metadata:
+  experiment_id: tabular-q-learning-sixarms
+execution:
+  backend: local
+nodes:
+  - id: env
+    component: builtin.env.sixarms
+    position: {x: 80, y: 80}
+    config: {}
+  - id: policy
+    component: builtin.policy.ucb
+    position: {x: 80, y: 260}
+    config:
+      coefficient: 1.5
+      initial_count: 1.0
+  - id: agent
+    component: builtin.agent.q_learning_tabular
+    position: {x: 360, y: 80}
+    config:
+      learning_rate: 0.05
+      discount: 0.99
+  - id: runner
+    component: builtin.runner.tabular_jax
+    position: {x: 660, y: 150}
+    config:
+      seed: 5
+      train_episodes: 120
+      max_episode_steps: 50
+      eval_episodes: 10
+      save_final_checkpoint: true
+edges:
+  - from_node: env
+    from_port: environment
+    to_node: runner
+    to_port: environment
+  - from_node: policy
+    from_port: policy
+    to_node: runner
+    to_port: policy
+  - from_node: agent
+    from_port: agent
+    to_node: runner
+    to_port: agent

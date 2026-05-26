@@ -1,0 +1,64 @@
+name: navix_dqn_empty_room
+description: Builtin JAX DQN on Navix EmptyRoom with one-hot state features and cardinal actions.
+metadata:
+  experiment_id: navix_dqn_empty_room
+execution:
+  backend: local
+nodes:
+  - id: env
+    component: navix.env.grid
+    position: {x: 80, y: 80}
+    config:
+      env_name: empty_room
+      size: 5
+      layout: fixed
+      observation_mode: state_features
+      action_set: cardinal
+      max_steps: 50
+  - id: agent
+    component: builtin.agent.dqn_jax
+    position: {x: 360, y: 80}
+    config:
+      learning_rate: 0.001
+      discount: 0.99
+      hidden_units: [128, 128]
+      update_frequency: 1
+      target_update_frequency: 200
+      epsilon_start: 1.0
+      epsilon_end: 0.05
+      epsilon_decay_steps: 10000
+      eval_epsilon: 0.0
+      loss_type: mse
+  - id: replay
+    component: builtin.replay.uniform
+    position: {x: 360, y: 220}
+    config:
+      capacity: 10000
+      batch_size: 32
+      min_size: 500
+      updates_per_step: 1
+      save_dataset_path: ""
+  - id: runner
+    component: builtin.runner.tabular_jax
+    position: {x: 660, y: 150}
+    config:
+      seed: 0
+      train_episodes: 200
+      max_episode_steps: 50
+      eval_episodes: 10
+      checkpoint_freq: null
+      checkpoint_dir: checkpoints
+      save_final_checkpoint: true
+edges:
+  - from_node: env
+    from_port: environment
+    to_node: runner
+    to_port: environment
+  - from_node: agent
+    from_port: agent
+    to_node: runner
+    to_port: agent
+  - from_node: replay
+    from_port: replay_buffer
+    to_node: runner
+    to_port: replay_buffer

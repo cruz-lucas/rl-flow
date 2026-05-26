@@ -1,0 +1,53 @@
+name: tabular_sarsa_gridworld
+description: Builtin JAX tabular Sarsa on gridworld with UCB exploration.
+metadata:
+  experiment_id: tabular-sarsa-gridworld
+execution:
+  backend: local
+nodes:
+  - id: env
+    component: builtin.env.gridworld
+    position: {x: 80, y: 80}
+    config:
+      width: 4
+      height: 4
+      start_state: 0
+      goal_state: 15
+      pit_states: [5, 7, 11]
+      goal_reward: 1.0
+      pit_reward: -1.0
+      step_reward: -0.02
+  - id: policy
+    component: builtin.policy.ucb
+    position: {x: 80, y: 260}
+    config:
+      coefficient: 1.2
+      initial_count: 1.0
+  - id: agent
+    component: builtin.agent.sarsa_tabular
+    position: {x: 360, y: 80}
+    config:
+      learning_rate: 0.3
+      discount: 0.95
+  - id: runner
+    component: builtin.runner.tabular_jax
+    position: {x: 660, y: 150}
+    config:
+      seed: 2
+      train_episodes: 150
+      max_episode_steps: 40
+      eval_episodes: 10
+      save_final_checkpoint: true
+edges:
+  - from_node: env
+    from_port: environment
+    to_node: runner
+    to_port: environment
+  - from_node: policy
+    from_port: policy
+    to_node: runner
+    to_port: policy
+  - from_node: agent
+    from_port: agent
+    to_node: runner
+    to_port: agent

@@ -1,0 +1,695 @@
+import json
+import subprocess
+from pathlib import Path
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+import yaml
+
+from rlflow.graph.compiler import WorkflowCompiler
+from rlflow.registry.builtin import create_default_registry
+from rlflow.schemas.workflow import WorkflowEdge, WorkflowNode, WorkflowSpec
+from rlflow_builtin.dqn.training import (
+    DqnAgentConfig,
+    DqnIntrinsicConfig,
+    DqnReplayConfig,
+    _count_raw_bonus,
+    _initial_intrinsic_state,
+    _make_dqn_environment,
+    _observe_intrinsic_transition,
+    _rmax_action,
+    run_dqn_training,
+)
+from rlflow_builtin.tabular.types import RunnerConfig
+
+
+def test_builtin_tabular_q_learning_riverswim_runs(tmp_path: Path) -> None:
+    workflow = WorkflowSpec.model_validate(
+        yaml.safe_load(Path("configs/workflows/tabular_q_learning_riverswim.yaml").read_text(encoding="utf-8"))
+    )
+
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+
+    command = (tmp_path / "command.sh").read_text(encoding="utf-8")
+    assert "rlflow_builtin.runners.tabular_jax" in command
+
+    subprocess.run(["bash", experiment.command], check=True)
+
+    q_table = np.load(tmp_path / "q_table.npy")
+    metrics = json.loads((tmp_path / "metrics.json").read_text(encoding="utf-8"))
+    assert q_table.shape == (6, 2)
+    assert metrics["agent"] == "builtin.agent.q_learning_tabular"
+    assert metrics["policy"] == "builtin.policy.epsilon_greedy"
+    assert metrics["environment"] == "builtin.env.riverswim"
+    assert metrics["mean_eval_return"] is not None
+    assert (tmp_path / "checkpoints" / "q_learning" / "final_checkpoint.npz").exists()
+
+
+def test_builtin_tabular_q_learning_accepts_optional_replay_buffer(tmp_path: Path) -> None:
+    workflow_data = yaml.safe_load(Path("configs/workflows/tabular_q_learning_riverswim.yaml").read_text(encoding="utf-8"))
+    workflow_data["name"] = "tabular_q_learning_riverswim_replay"
+    for node in workflow_data["nodes"]:
+        if node["id"] == "runner":
+            node["config"]["train_episodes"] = 30
+            node["config"]["eval_episodes"] = 0
+            node["config"]["save_final_checkpoint"] = False
+    workflow_data["nodes"].append(
+        {
+            "id": "replay",
+            "component": "builtin.replay.tabular_uniform",
+            "position": {"x": 360, "y": 260},
+            "config": {
+                "capacity": 64,
+                "batch_size": 4,
+                "min_size": 4,
+                "updates_per_step": 1,
+            },
+        }
+    )
+    workflow_data["edges"].append(
+        {
+            "from_node": "replay",
+            "from_port": "replay_buffer",
+            "to_node": "runner",
+            "to_port": "replay_buffer",
+        }
+    )
+    workflow = WorkflowSpec.model_validate(workflow_data)
+
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+
+    subprocess.run(["bash", experiment.command], check=True)
+
+    metrics = json.loads((tmp_path / "metrics.json").read_text(encoding="utf-8"))
+    assert metrics["replay_buffer"] == "builtin.replay.tabular_uniform"
+    assert np.load(tmp_path / "q_table.npy").shape == (6, 2)
+
+
+def test_builtin_tabular_sarsa_gridworld_runs(tmp_path: Path) -> None:
+    workflow = WorkflowSpec.model_validate(
+        yaml.safe_load(Path("configs/workflows/tabular_sarsa_gridworld.yaml").read_text(encoding="utf-8"))
+    )
+
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+
+    subprocess.run(["bash", experiment.command], check=True)
+
+    q_table = np.load(tmp_path / "q_table.npy")
+    metrics = json.loads((tmp_path / "metrics.json").read_text(encoding="utf-8"))
+    assert q_table.shape == (16, 4)
+    assert metrics["agent"] == "builtin.agent.sarsa_tabular"
+    assert metrics["policy"] == "builtin.policy.ucb"
+    assert metrics["mean_eval_return"] is not None
+
+
+def test_builtin_tabular_q_learning_sixarms_runs(tmp_path: Path) -> None:
+    workflow = WorkflowSpec.model_validate(
+        yaml.safe_load(Path("configs/workflows/tabular_q_learning_sixarms.yaml").read_text(encoding="utf-8"))
+    )
+
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+
+    subprocess.run(["bash", experiment.command], check=True)
+
+    q_table = np.load(tmp_path / "q_table.npy")
+    metrics = json.loads((tmp_path / "metrics.json").read_text(encoding="utf-8"))
+    assert q_table.shape == (7, 6)
+    assert metrics["environment"] == "builtin.env.sixarms"
+    assert metrics["mean_eval_return"] is not None
+
+
+def test_builtin_tabular_q_learning_navix_empty_room_runs(tmp_path: Path) -> None:
+    workflow = WorkflowSpec.model_validate(
+        {
+            "name": "tabular_q_learning_navix_empty_room",
+            "nodes": [
+                {
+                    "id": "env",
+                    "component": "navix.env.grid",
+                    "position": {"x": 0, "y": 0},
+                    "config": {
+                        "env_name": "empty_room",
+                        "size": 5,
+                        "layout": "fixed",
+                        "observation_mode": "tabular",
+                        "action_set": "cardinal",
+                        "max_steps": 20,
+                    },
+                },
+                {
+                    "id": "agent",
+                    "component": "builtin.agent.q_learning_tabular",
+                    "position": {"x": 0, "y": 100},
+                    "config": {"learning_rate": 0.1, "discount": 0.99, "initial_q": 0.0},
+                },
+                {
+                    "id": "policy",
+                    "component": "builtin.policy.epsilon_greedy",
+                    "position": {"x": 0, "y": 200},
+                    "config": {"epsilon": 0.1, "eval_epsilon": 0.0},
+                },
+                {
+                    "id": "runner",
+                    "component": "builtin.runner.tabular_jax",
+                    "position": {"x": 300, "y": 100},
+                    "config": {
+                        "seed": 0,
+                        "train_episodes": 2,
+                        "max_episode_steps": 5,
+                        "eval_episodes": 1,
+                        "checkpoint_freq": None,
+                        "checkpoint_dir": "checkpoints",
+                        "save_final_checkpoint": False,
+                    },
+                },
+            ],
+            "edges": [
+                {"from_node": "env", "from_port": "environment", "to_node": "runner", "to_port": "environment"},
+                {"from_node": "agent", "from_port": "agent", "to_node": "runner", "to_port": "agent"},
+                {"from_node": "policy", "from_port": "policy", "to_node": "runner", "to_port": "policy"},
+            ],
+        }
+    )
+
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+
+    subprocess.run(["bash", experiment.command], check=True)
+
+    q_table = np.load(tmp_path / "q_table.npy")
+    metrics = json.loads((tmp_path / "metrics.json").read_text(encoding="utf-8"))
+    assert q_table.shape == (9, 4)
+    assert metrics["environment"] == "navix.env.grid"
+    assert metrics["mean_eval_return"] is not None
+
+
+def test_builtin_tabular_replay_dataset_can_be_saved_and_loaded_for_offline_rl(tmp_path: Path) -> None:
+    collector = _riverswim_dataset_workflow(
+        name="collect_riverswim_dataset",
+        replay_config={
+            "capacity": 64,
+            "batch_size": 4,
+            "min_size": 1,
+            "updates_per_step": 0,
+            "save_dataset_path": "datasets/replay.npz",
+            "load_dataset_path": "",
+            "offline_only": False,
+            "offline_updates": 0,
+        },
+    )
+    collect_dir = tmp_path / "collect"
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(collector, out_dir=collect_dir)
+
+    subprocess.run(["bash", experiment.command], check=True)
+
+    dataset_path = collect_dir / "datasets" / "replay.npz"
+    assert dataset_path.exists()
+    dataset = np.load(dataset_path)
+    assert set(dataset.files) == {"observations", "actions", "rewards", "next_observations", "terminals"}
+    assert dataset["observations"].shape == (10,)
+
+    offline = _riverswim_dataset_workflow(
+        name="offline_riverswim_dataset",
+        replay_config={
+            "capacity": 64,
+            "batch_size": 4,
+            "min_size": 1,
+            "updates_per_step": 0,
+            "save_dataset_path": "",
+            "load_dataset_path": str(dataset_path),
+            "offline_only": True,
+            "offline_updates": 8,
+        },
+    )
+    offline_dir = tmp_path / "offline"
+    offline_experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(offline, out_dir=offline_dir)
+
+    subprocess.run(["bash", offline_experiment.command], check=True)
+
+    metrics = json.loads((offline_dir / "metrics.json").read_text(encoding="utf-8"))
+    assert metrics["offline_only"] is True
+    assert metrics["loaded_replay_dataset_path"] == str(dataset_path)
+    assert np.load(offline_dir / "q_table.npy").shape == (6, 2)
+
+
+def test_builtin_jax_runner_uses_builtin_dqn_for_non_tabular_navix_observations(tmp_path: Path) -> None:
+    workflow = _dqn_navix_workflow(
+        observation_mode="symbolic",
+        agent_config={
+            "learning_rate": 0.001,
+            "discount": 0.99,
+            "hidden_units": [16],
+            "update_frequency": 1,
+            "target_update_frequency": 10,
+            "epsilon_start": 0.2,
+            "epsilon_end": 0.1,
+            "epsilon_decay_steps": 10,
+            "eval_epsilon": 0.0,
+            "loss_type": "mse",
+        },
+    )
+
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+
+    subprocess.run(["bash", experiment.command], check=True)
+
+    metrics = json.loads((tmp_path / "metrics.json").read_text(encoding="utf-8"))
+    assert metrics["agent"] == "builtin.agent.dqn_jax"
+    assert metrics["runner"] == "builtin.runner.tabular_jax"
+    assert metrics["source_observation_shape"] == [5, 5, 3]
+    assert metrics["input_dim"] == 75
+    assert metrics["num_actions"] == 4
+    assert metrics["mean_eval_return"] is not None
+
+
+def test_builtin_jax_runner_uses_builtin_dqn_for_tabular_navix_observations(tmp_path: Path) -> None:
+    workflow = _dqn_navix_workflow(
+        observation_mode="tabular",
+        agent_config={
+            "learning_rate": 0.001,
+            "discount": 0.99,
+            "hidden_units": [16],
+            "update_frequency": 1,
+            "target_update_frequency": 10,
+            "epsilon_start": 0.2,
+            "epsilon_end": 0.1,
+            "epsilon_decay_steps": 10,
+            "eval_epsilon": 0.0,
+            "loss_type": "huber",
+        },
+    )
+
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+
+    subprocess.run(["bash", experiment.command], check=True)
+
+    metrics = json.loads((tmp_path / "metrics.json").read_text(encoding="utf-8"))
+    assert metrics["agent"] == "builtin.agent.dqn_jax"
+    assert metrics["runner"] == "builtin.runner.tabular_jax"
+    assert metrics["source_observation_shape"] == []
+    assert metrics["input_dim"] == 9
+    assert metrics["num_actions"] == 4
+    assert metrics["mean_eval_return"] is not None
+
+
+def test_builtin_dqn_replay_dataset_save_path_appends_npz(tmp_path: Path) -> None:
+    workflow = _dqn_navix_workflow(
+        observation_mode="symbolic",
+        agent_config={
+            "learning_rate": 0.001,
+            "discount": 0.99,
+            "hidden_units": [16],
+            "update_frequency": 1,
+            "target_update_frequency": 10,
+            "epsilon_start": 1.0,
+            "epsilon_end": 1.0,
+            "epsilon_decay_steps": 10,
+            "eval_epsilon": 0.0,
+            "loss_type": "mse",
+        },
+    )
+    for node in workflow.nodes:
+        if node.id == "replay":
+            node.config["save_dataset_path"] = "datasets/replay"
+
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+
+    subprocess.run(["bash", experiment.command], check=True)
+
+    dataset_path = tmp_path / "datasets" / "replay.npz"
+    metrics = json.loads((tmp_path / "metrics.json").read_text(encoding="utf-8"))
+    assert dataset_path.exists()
+    assert metrics["saved_replay_dataset_path"] == str(dataset_path)
+    dataset = np.load(dataset_path)
+    observations = dataset["observations"]
+    next_observations = dataset["next_observations"]
+    assert observations.shape[1:] == (5, 5, 3)
+    assert next_observations.shape == observations.shape
+    assert observations.dtype == np.uint8
+    assert int(observations.max()) == 10
+    assert observations[0, 0, 0].tolist() == [2, 5, 0]
+
+
+def test_builtin_dqn_navix_symbolic_encoder_respects_normalize_observations() -> None:
+    settings = {
+        "env_name": "empty_room",
+        "size": 5,
+        "layout": "fixed",
+        "observation_mode": "symbolic",
+        "action_set": "cardinal",
+        "max_steps": 20,
+    }
+    raw_env = _make_dqn_environment(
+        "navix.env.grid",
+        settings,
+        normalize_observations=False,
+    )
+    normalized_env = _make_dqn_environment(
+        "navix.env.grid",
+        settings,
+        normalize_observations=True,
+    )
+    timestep = raw_env.reset(jax.random.PRNGKey(0))
+
+    raw_encoded = np.asarray(raw_env.encode(timestep.observation))
+    normalized_encoded = np.asarray(normalized_env.encode(timestep.observation))
+
+    assert raw_encoded.shape == (75,)
+    assert float(raw_encoded.max()) == 10.0
+    assert np.isclose(float(normalized_encoded.max()), 10.0 / 255.0)
+
+
+def test_builtin_jax_runner_uses_dqn_rmax_with_count_bonus(tmp_path: Path) -> None:
+    workflow = _dqn_navix_workflow(
+        observation_mode="tabular",
+        agent_config={
+            "learning_rate": 0.001,
+            "discount": 0.99,
+            "hidden_units": [16],
+            "update_frequency": 1,
+            "target_update_frequency": 4,
+            "epsilon_start": 0.0,
+            "epsilon_end": 0.0,
+            "epsilon_decay_steps": 1,
+            "eval_epsilon": 0.0,
+            "loss_type": "mse",
+            "rmax_bonus_threshold": 0.5,
+            "rmax_v_max": 100.0,
+        },
+    )
+    for node in workflow.nodes:
+        if node.id == "agent":
+            node.component = "builtin.agent.dqn_rmax_jax"
+        if node.id == "replay":
+            node.config["batch_size"] = 2
+            node.config["min_size"] = 1
+        if node.id == "runner":
+            node.config["max_episode_steps"] = 3
+    workflow.nodes.append(
+        WorkflowNode.model_validate(
+            {
+                "id": "intrinsic",
+                "component": "builtin.intrinsic.count",
+                "position": {"x": 0, "y": 300},
+                "config": {
+                    "intrinsic_reward_scale": 1.0,
+                    "intrinsic_stats_decay": 1.0,
+                    "intrinsic_reward_epsilon": 1e-4,
+                    "intrinsic_reward_clip": 10.0,
+                    "intrinsic_reward_center": False,
+                    "count_action_conditioning": "input",
+                    "count_table_size": 256,
+                    "count_bonus_exponent": 0.5,
+                    "count_min_count": 1.0,
+                },
+            }
+        )
+    )
+    workflow.edges.append(
+        WorkflowEdge.model_validate(
+            {
+                "from_node": "intrinsic",
+                "from_port": "intrinsic_reward",
+                "to_node": "runner",
+                "to_port": "intrinsic_reward",
+            }
+        )
+    )
+
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+
+    subprocess.run(["bash", experiment.command], check=True)
+
+    metrics = json.loads((tmp_path / "metrics.json").read_text(encoding="utf-8"))
+    assert metrics["agent"] == "builtin.agent.dqn_rmax_jax"
+    assert metrics["agent_algorithm"] == "dqn_rmax"
+    assert metrics["intrinsic_reward"] == "builtin.intrinsic.count"
+    assert metrics["mean_eval_return"] is not None
+
+
+def test_count_bonus_uses_exact_limited_table() -> None:
+    agent = _minimal_dqn_agent()
+    intrinsic = DqnIntrinsicConfig(
+        kind="count",
+        action_conditioning="input",
+        count_table_size=2,
+        count_bonus_exponent=0.5,
+        count_min_count=1.0,
+    )
+    state = _initial_intrinsic_state(
+        agent,
+        intrinsic,
+        input_dim=2,
+        num_actions=2,
+        key=jax.random.PRNGKey(0),
+    )
+    observation = jnp.asarray([1.0, 0.0], dtype=jnp.float32)
+    state = _observe_intrinsic_transition(state, observation, jnp.asarray(0), intrinsic, 2)
+    state = _observe_intrinsic_transition(state, observation, jnp.asarray(0), intrinsic, 2)
+    state = _observe_intrinsic_transition(state, observation, jnp.asarray(1), intrinsic, 2)
+
+    assert int(np.asarray(state.count_size)) == 2
+    assert bool(np.asarray(state.count_overflow)) is False
+    bonuses = _count_raw_bonus(
+        state,
+        jnp.stack([observation, observation]),
+        jnp.asarray([0, 1], dtype=jnp.int32),
+        intrinsic,
+        2,
+    )
+    np.testing.assert_allclose(np.asarray(bonuses), np.asarray([1.0 / np.sqrt(2.0), 1.0]), rtol=1e-6)
+
+    state = _observe_intrinsic_transition(
+        state,
+        jnp.asarray([0.0, 1.0], dtype=jnp.float32),
+        jnp.asarray(0),
+        intrinsic,
+        2,
+    )
+    assert int(np.asarray(state.count_size)) == 2
+    assert bool(np.asarray(state.count_overflow)) is True
+
+
+def test_rmax_breaks_ties_randomly() -> None:
+    agent = _minimal_dqn_agent(algorithm="dqn_rmax")
+    intrinsic = DqnIntrinsicConfig(
+        kind="count",
+        action_conditioning="input",
+        count_table_size=8,
+        count_bonus_exponent=0.5,
+        count_min_count=1.0,
+    )
+    state = _initial_intrinsic_state(
+        agent,
+        intrinsic,
+        input_dim=2,
+        num_actions=3,
+        key=jax.random.PRNGKey(0),
+    )
+    params = ({"w": jnp.zeros((2, 3), dtype=jnp.float32), "b": jnp.zeros((3,), dtype=jnp.float32)},)
+    actions = {
+        int(
+            np.asarray(
+                _rmax_action(
+                    agent,
+                    params,
+                    state,
+                    intrinsic,
+                    jnp.asarray([1.0, 0.0], dtype=jnp.float32),
+                    jax.random.PRNGKey(seed),
+                    3,
+                )
+            )
+        )
+        for seed in range(20)
+    }
+
+    assert len(actions) > 1
+
+
+def test_builtin_dqn_training_accepts_train_steps() -> None:
+    result = run_dqn_training(
+        env_component="builtin.env.riverswim",
+        env_settings={
+            "num_states": 6,
+            "start_state": 1,
+            "random_start": False,
+            "p_left": 0.1,
+            "p_stay": 0.6,
+            "p_right": 0.3,
+            "easy_reward": 5.0,
+            "hard_reward": 10000.0,
+            "common_reward": 0.0,
+        },
+        agent=_minimal_dqn_agent(),
+        replay=DqnReplayConfig(
+            name="builtin.replay.uniform",
+            capacity=8,
+            batch_size=2,
+            min_size=100,
+            updates_per_step=1,
+        ),
+        runner=RunnerConfig(
+            seed=0,
+            train_episodes=99,
+            train_steps=3,
+            max_episode_steps=10,
+            eval_episodes=0,
+            checkpoint_freq=None,
+            checkpoint_dir="checkpoints",
+            save_final_checkpoint=False,
+        ),
+    )
+
+    assert int(result.train_lengths.sum()) == 3
+
+
+def _riverswim_dataset_workflow(name: str, replay_config: dict) -> WorkflowSpec:
+    return WorkflowSpec.model_validate(
+        {
+            "name": name,
+            "nodes": [
+                {
+                    "id": "env",
+                    "component": "builtin.env.riverswim",
+                    "position": {"x": 0, "y": 0},
+                    "config": {"random_start": True},
+                },
+                {
+                    "id": "agent",
+                    "component": "builtin.agent.q_learning_tabular",
+                    "position": {"x": 0, "y": 100},
+                    "config": {"learning_rate": 0.1, "discount": 0.99, "initial_q": 0.0},
+                },
+                {
+                    "id": "policy",
+                    "component": "builtin.policy.epsilon_greedy",
+                    "position": {"x": 0, "y": 200},
+                    "config": {"epsilon": 0.2, "eval_epsilon": 0.0},
+                },
+                {
+                    "id": "replay",
+                    "component": "builtin.replay.tabular_uniform",
+                    "position": {"x": 280, "y": 200},
+                    "config": replay_config,
+                },
+                {
+                    "id": "runner",
+                    "component": "builtin.runner.tabular_jax",
+                    "position": {"x": 300, "y": 100},
+                    "config": {
+                        "seed": 0,
+                        "train_episodes": 2,
+                        "max_episode_steps": 5,
+                        "eval_episodes": 0,
+                        "checkpoint_freq": None,
+                        "checkpoint_dir": "checkpoints",
+                        "save_final_checkpoint": False,
+                    },
+                },
+            ],
+            "edges": [
+                {"from_node": "env", "from_port": "environment", "to_node": "runner", "to_port": "environment"},
+                {"from_node": "agent", "from_port": "agent", "to_node": "runner", "to_port": "agent"},
+                {"from_node": "policy", "from_port": "policy", "to_node": "runner", "to_port": "policy"},
+                {"from_node": "replay", "from_port": "replay_buffer", "to_node": "runner", "to_port": "replay_buffer"},
+            ],
+        }
+    )
+
+
+def _minimal_dqn_agent(algorithm: str = "dqn") -> DqnAgentConfig:
+    return DqnAgentConfig(
+        algorithm=algorithm,
+        learning_rate=0.001,
+        discount=0.99,
+        hidden_units=(),
+        activation="relu",
+        update_frequency=1,
+        target_update_frequency=4,
+        epsilon_start=0.0,
+        epsilon_end=0.0,
+        epsilon_decay_steps=1,
+        eval_epsilon=0.0,
+        loss_type="mse",
+        huber_delta=1.0,
+        double_q=False,
+        max_grad_norm=1.0,
+        optimizer="adam",
+        optimizer_beta1=0.9,
+        optimizer_beta2=0.999,
+        optimizer_epsilon=1e-8,
+        optimizer_weight_decay=0.0,
+        optimizer_momentum=0.0,
+        optimizer_decay=0.95,
+        optimizer_centered=False,
+        normalize_observations=False,
+        obs_normalization_epsilon=1e-8,
+        obs_normalization_clip=5.0,
+        rmax_bonus_threshold=0.5,
+        rmax_v_max=100.0,
+        seed=0,
+    )
+
+
+def _dqn_navix_workflow(
+    *,
+    observation_mode: str,
+    agent_config: dict,
+) -> WorkflowSpec:
+    return WorkflowSpec.model_validate(
+        {
+            "name": f"dqn_{observation_mode}_navix",
+            "nodes": [
+                {
+                    "id": "env",
+                    "component": "navix.env.grid",
+                    "position": {"x": 0, "y": 0},
+                    "config": {
+                        "env_name": "empty_room",
+                        "size": 5,
+                        "layout": "fixed",
+                        "observation_mode": observation_mode,
+                        "action_set": "cardinal",
+                        "max_steps": 20,
+                    },
+                },
+                {
+                    "id": "agent",
+                    "component": "builtin.agent.dqn_jax",
+                    "position": {"x": 0, "y": 100},
+                    "config": agent_config,
+                },
+                {
+                    "id": "replay",
+                    "component": "builtin.replay.uniform",
+                    "position": {"x": 0, "y": 200},
+                    "config": {
+                        "capacity": 128,
+                        "batch_size": 2,
+                        "min_size": 100,
+                        "updates_per_step": 1,
+                    },
+                },
+                {
+                    "id": "runner",
+                    "component": "builtin.runner.tabular_jax",
+                    "position": {"x": 300, "y": 100},
+                    "config": {
+                        "seed": 0,
+                        "train_episodes": 1,
+                        "max_episode_steps": 2,
+                        "eval_episodes": 1,
+                        "checkpoint_freq": None,
+                        "checkpoint_dir": "checkpoints",
+                        "save_final_checkpoint": False,
+                    },
+                },
+            ],
+            "edges": [
+                {"from_node": "env", "from_port": "environment", "to_node": "runner", "to_port": "environment"},
+                {"from_node": "agent", "from_port": "agent", "to_node": "runner", "to_port": "agent"},
+                {"from_node": "replay", "from_port": "replay_buffer", "to_node": "runner", "to_port": "replay_buffer"},
+            ],
+        }
+    )

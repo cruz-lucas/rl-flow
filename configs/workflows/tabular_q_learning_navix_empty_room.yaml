@@ -1,0 +1,51 @@
+name: tabular_q_learning_navix_empty_room
+description: Builtin JAX tabular Q-learning on a Navix EmptyRoom with cardinal actions.
+metadata:
+  experiment_id: tabular-q-learning-navix-empty-room
+execution:
+  backend: local
+nodes:
+  - id: env
+    component: navix.env.grid
+    position: {x: 80, y: 80}
+    config:
+      env_name: empty_room
+      size: 5
+      layout: fixed
+      observation_mode: tabular
+      action_set: cardinal
+      max_steps: 20
+  - id: policy
+    component: builtin.policy.epsilon_greedy
+    position: {x: 80, y: 260}
+    config:
+      epsilon: 0.2
+      eval_epsilon: 0.0
+  - id: agent
+    component: builtin.agent.q_learning_tabular
+    position: {x: 360, y: 80}
+    config:
+      learning_rate: 0.1
+      discount: 0.99
+  - id: runner
+    component: builtin.runner.tabular_jax
+    position: {x: 660, y: 150}
+    config:
+      seed: 0
+      train_episodes: 40
+      max_episode_steps: 20
+      eval_episodes: 5
+      save_final_checkpoint: true
+edges:
+  - from_node: env
+    from_port: environment
+    to_node: runner
+    to_port: environment
+  - from_node: policy
+    from_port: policy
+    to_node: runner
+    to_port: policy
+  - from_node: agent
+    from_port: agent
+    to_node: runner
+    to_port: agent

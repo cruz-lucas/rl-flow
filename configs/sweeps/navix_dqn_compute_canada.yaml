@@ -1,0 +1,34 @@
+name: navix_dqn_hparam_sweep
+description: Example SLURM array sweep for Compute Canada / Alliance clusters.
+sweep_id: navix-dqn-hparam-sweep
+workflow: ../workflows/navix_dqn_empty_room.yaml
+method: grid
+metric:
+  name: mean_eval_return
+  goal: maximize
+execution:
+  backend: slurm
+  options:
+    account: def-yourpi
+    time: "02:00:00"
+    cpus_per_task: 4
+    mem: 16G
+    gres: gpu:1
+    modules:
+      - python/3.11
+    env:
+      XLA_PYTHON_CLIENT_PREALLOCATE: "false"
+    preamble:
+      - echo "Running ${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID} on $(hostname)"
+slurm:
+  max_parallel: 8
+parameters:
+  learning_rate:
+    target: nodes.agent.config.learning_rate
+    values: [0.001, 0.0003, 0.0001]
+  batch_size:
+    target: nodes.replay.config.batch_size
+    values: [32, 64]
+  seed:
+    target: nodes.runner.config.seed
+    values: [0, 1]

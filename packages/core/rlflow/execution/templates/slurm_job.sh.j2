@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+#SBATCH --job-name={{ experiment.experiment_id }}
+#SBATCH --output={{ experiment.run_dir }}/logs/slurm-%j.out
+#SBATCH --error={{ experiment.run_dir }}/logs/slurm-%j.err
+#SBATCH --time={{ options.time }}
+{% if options.nodes -%}
+#SBATCH --nodes={{ options.nodes }}
+{% endif -%}
+{% if options.ntasks -%}
+#SBATCH --ntasks={{ options.ntasks }}
+{% endif -%}
+#SBATCH --cpus-per-task={{ options.cpus_per_task }}
+#SBATCH --mem={{ options.mem }}
+{% if options.partition -%}
+#SBATCH --partition={{ options.partition }}
+{% endif -%}
+{% if options.account -%}
+#SBATCH --account={{ options.account }}
+{% endif -%}
+{% if options.gres -%}
+#SBATCH --gres={{ options.gres }}
+{% endif -%}
+{% if options.constraint -%}
+#SBATCH --constraint={{ options.constraint }}
+{% endif -%}
+{% if options.qos -%}
+#SBATCH --qos={{ options.qos }}
+{% endif -%}
+{% if options.reservation -%}
+#SBATCH --reservation={{ options.reservation }}
+{% endif -%}
+{% if options.mail_user -%}
+#SBATCH --mail-user={{ options.mail_user }}
+{% endif -%}
+{% if options.mail_type -%}
+#SBATCH --mail-type={{ options.mail_type }}
+{% endif %}
+set -euo pipefail
+
+mkdir -p "{{ experiment.run_dir }}/logs"
+cd "{{ experiment.run_dir }}"
+
+{% for key, value in options.env.items() -%}
+export {{ key }}="{{ value }}"
+{% endfor -%}
+{% for module in options.modules -%}
+module load {{ module }}
+{% endfor -%}
+{% if options.venv_path -%}
+source "{{ options.venv_path }}/bin/activate"
+{% endif -%}
+{% if options.conda_env -%}
+conda activate "{{ options.conda_env }}"
+{% endif -%}
+{% for line in options.preamble -%}
+{{ line }}
+{% endfor %}
+bash "{{ experiment.command }}"

@@ -1,0 +1,16 @@
+backend: slurm
+partition: gpu
+account: project-account
+time: "01:00:00"
+cpus_per_task: 4
+mem: 16G
+gres: gpu:1
+constraint: null
+modules:
+  - python/3.11
+venv_path: null
+conda_env: null
+preamble:
+  - echo "Starting rl-flow job on $(hostname)"
+env:
+  XLA_PYTHON_CLIENT_PREALLOCATE: "false"

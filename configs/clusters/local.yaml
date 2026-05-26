@@ -1,0 +1,2 @@
+backend: local
+description: Local subprocess execution for development.
