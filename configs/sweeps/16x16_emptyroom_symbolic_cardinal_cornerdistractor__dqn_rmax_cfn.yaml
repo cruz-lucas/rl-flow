@@ -1,0 +1,49 @@
+name: navix_dqn_hparam_sweep
+description: Example SLURM array sweep for Compute Canada / Alliance clusters.
+sweep_id: navix-dqn-hparam-sweep
+workflow: ../workflows/16x16_emptyroom_symbolic_cardinal_cornerdistractor__dqn_rmax_cfn.yaml
+method: grid
+metric:
+  goal: maximize
+  last_n: 500
+  name: mean_train_return_last_n
+execution:
+  backend: slurm
+  options:
+    account: def-machado
+    time: "02:00:00"
+    cpus_per_task: 4
+    mem: 16G
+    modules:
+      - python/3.11
+    env:
+      XLA_PYTHON_CLIENT_PREALLOCATE: "false"
+    preamble:
+      - echo "Running ${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID} on $(hostname)"
+slurm:
+  max_parallel: 8
+parameters:
+  learning_rate:
+    target: nodes.agent-1.config.learning_rate
+    values: [0.001, 0.0003, 0.0001]
+  rmax_v_max:
+    target: nodes.agent-1.config.rmax_v_max
+    values: [1, 2, 5]
+  rmax_bonus_threshold:
+    target: nodes.agent-1.config.rmax_bonus_threshold
+    values: [0.3, 0.5, 0.9]
+  cfn_activation:
+    target: nodes.intrinsic_reward-5.config.cfn_activation
+    values: ["relu", "gelu", "linear"]
+  cfn_learning_rate:
+    target: nodes.intrinsic_reward-5.config.cfn_learning_rate
+    values: [0.001, 0.0003, 0.0001]
+  cfn_output_dim:
+    target: nodes.intrinsic_reward-5.config.cfn_output_dim
+    values: [32, 64, 128]
+  batch_size:
+    target: nodes.replay_buffer-3.config.batch_size
+    values: [32, 64, 128]
+  seed:
+    target: nodes.runner-4.config.seed
+    values: [0, 1, 2, 3, 4]
