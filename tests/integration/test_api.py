@@ -110,8 +110,9 @@ def test_api_compiles_sweep_from_saved_workflow(monkeypatch, tmp_path) -> None:
     )
     assert inspected.status_code == 200
     summary = inspected.json()
-    assert summary["best"]["trial_id"] == "trial-0000"
+    assert summary["best"]["parameters"] == {"lr": 0.05}
     assert summary["best"]["metric"] == 2.0
+    assert summary["best"]["metric_count"] == 1
 
 
 def test_api_run_creates_unique_runs_and_refreshes_job_status(monkeypatch, tmp_path) -> None:

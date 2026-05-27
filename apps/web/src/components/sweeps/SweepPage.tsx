@@ -353,15 +353,19 @@ function SweepResult({ compilation, run, summary }: { compilation?: SweepCompila
         {summary?.best && (
           <>
             <div>
-              <span>best</span>
+              <span>best config</span>
               <strong>
                 <Trophy size={16} />
-                {summary.best.trial_id}
+                {summary.best.group_id}
               </strong>
             </div>
             <div>
-              <span>{summary.metric}</span>
+              <span>mean {summary.metric}</span>
               <strong>{formatMetric(summary.best.metric)}</strong>
+            </div>
+            <div>
+              <span>seeds</span>
+              <strong>{summary.best.metric_count}</strong>
             </div>
           </>
         )}
@@ -403,30 +407,60 @@ function SweepResult({ compilation, run, summary }: { compilation?: SweepCompila
         </>
       )}
       {summary && (
-        <div className="table-scroll">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Trial</th>
-                <th>Metric</th>
-                <th>Parameters</th>
-                <th>Run dir</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rankedTrials(summary).slice(0, 200).map((trial, index) => (
-                <tr key={trial.trial_id}>
-                  <td>{trial.metric === null || trial.metric === undefined ? "" : index + 1}</td>
-                  <td>{trial.trial_id}</td>
-                  <td>{formatMetric(trial.metric)}</td>
-                  <td>{JSON.stringify(trial.parameters)}</td>
-                  <td>{trial.run_dir}</td>
+        <>
+          <div className="panel-title">Configurations</div>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Group</th>
+                  <th>Mean</th>
+                  <th>Min</th>
+                  <th>Max</th>
+                  <th>Seeds</th>
+                  <th>Parameters</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {summary.groups.slice(0, 200).map((group, index) => (
+                  <tr key={group.group_id}>
+                    <td>{index + 1}</td>
+                    <td>{group.group_id}</td>
+                    <td>{formatMetric(group.metric_mean)}</td>
+                    <td>{formatMetric(group.metric_min)}</td>
+                    <td>{formatMetric(group.metric_max)}</td>
+                    <td>{group.metric_count}</td>
+                    <td>{JSON.stringify(group.parameters)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="panel-title">Trials</div>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Trial</th>
+                  <th>Metric</th>
+                  <th>Parameters</th>
+                  <th>Run dir</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rankedTrials(summary).slice(0, 200).map((trial) => (
+                  <tr key={trial.trial_id}>
+                    <td>{trial.trial_id}</td>
+                    <td>{formatMetric(trial.metric)}</td>
+                    <td>{JSON.stringify(trial.parameters)}</td>
+                    <td>{trial.run_dir}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </section>
   );

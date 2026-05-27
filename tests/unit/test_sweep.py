@@ -81,8 +81,9 @@ def test_sweep_summarize_selects_best_metric(tmp_path: Path) -> None:
 
     summary = compiler.summarize(compilation.manifest_path)
 
-    assert summary["best"]["trial_id"] == "trial-0001"
-    assert summary["best"]["metric"] == 3.0
+    assert summary["best"]["parameters"] == {}
+    assert summary["best"]["metric"] == 2.0
+    assert summary["best"]["metric_count"] == 2
 
 
 def test_sweep_summarize_computes_train_return_last_n_from_history(tmp_path: Path) -> None:
@@ -121,5 +122,41 @@ def test_sweep_summarize_computes_train_return_last_n_from_history(tmp_path: Pat
     summary = compiler.summarize(compilation.manifest_path, metric_last_n=2)
 
     assert summary["metric_last_n"] == 2
-    assert summary["best"]["trial_id"] == "trial-0001"
-    assert summary["best"]["metric"] == 6.0
+    assert summary["best"]["parameters"] == {}
+    assert summary["best"]["metric"] == 4.25
+    assert summary["best"]["metric_count"] == 2
+
+
+def test_sweep_summarize_averages_seed_replicates_by_configuration(tmp_path: Path) -> None:
+    spec = SweepSpec.model_validate(
+        {
+            "name": "replicate sweep",
+            "sweep_id": "replicate-sweep",
+            "workflow": "configs/workflows/tabular_q_learning_riverswim.yaml",
+            "method": "grid",
+            "metric": {"name": "mean_eval_return", "goal": "maximize"},
+            "parameters": {
+                "lr": {
+                    "target": "nodes.agent.config.learning_rate",
+                    "values": [0.01, 0.1],
+                },
+                "seed": {
+                    "target": "nodes.runner.config.seed",
+                    "values": [0, 1],
+                },
+            },
+        }
+    )
+    compiler = SweepCompiler(create_default_registry(discover=False))
+    compilation = compiler.compile(spec, out_dir=tmp_path)
+    metrics = [10.0, 0.0, 4.0, 4.0]
+    for trial, metric in zip(compilation.trials, metrics, strict=True):
+        Path(trial.metrics_path).write_text(f'{{"mean_eval_return": {metric}}}', encoding="utf-8")
+
+    summary = compiler.summarize(compilation.manifest_path)
+
+    assert summary["best"]["parameters"] == {"lr": 0.01}
+    assert summary["best"]["metric"] == 5.0
+    assert summary["best"]["metric_count"] == 2
+    assert summary["groups"][1]["parameters"] == {"lr": 0.1}
+    assert summary["groups"][1]["metric"] == 4.0

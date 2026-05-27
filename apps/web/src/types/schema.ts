@@ -293,11 +293,24 @@ export interface SweepTrialSummary {
   metric?: number | null;
 }
 
+export interface SweepGroupSummary {
+  group_id: string;
+  parameters: Record<string, unknown>;
+  metric: number;
+  metric_mean: number;
+  metric_min: number;
+  metric_max: number;
+  metric_count: number;
+  trial_ids: string[];
+  run_dirs: string[];
+}
+
 export interface SweepSummary {
   sweep_id: string;
   metric: string;
   goal: "maximize" | "minimize" | string;
   metric_last_n?: number | null;
-  best?: SweepTrialSummary | null;
+  best?: SweepGroupSummary | null;
+  groups: SweepGroupSummary[];
   trials: SweepTrialSummary[];
 }

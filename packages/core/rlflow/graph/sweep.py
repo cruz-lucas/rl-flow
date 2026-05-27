@@ -148,18 +148,78 @@ class SweepCompiler:
                 }
             )
 
+        groups = self._metric_groups(rows, metric_goal)
+        best = copy.deepcopy(groups[0]) if groups else None
         reverse = metric_goal == "maximize"
         completed = [row for row in rows if isinstance(row["metric"], (int, float))]
         completed.sort(key=lambda row: float(row["metric"]), reverse=reverse)
-        best = copy.deepcopy(completed[0]) if completed else None
         return {
             "sweep_id": compilation.sweep_id,
             "metric": metric_name,
             "goal": metric_goal,
             "metric_last_n": resolved_last_n,
             "best": best,
+            "groups": groups,
             "trials": rows,
         }
+
+    def _metric_groups(
+        self,
+        rows: list[dict[str, Any]],
+        metric_goal: str,
+    ) -> list[dict[str, Any]]:
+        grouped: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            metric = row["metric"]
+            if not isinstance(metric, (int, float)):
+                continue
+            parameters = self._non_seed_parameters(row["parameters"])
+            key = json.dumps(parameters, sort_keys=True, default=str)
+            group = grouped.setdefault(
+                key,
+                {
+                    "group_id": f"group-{len(grouped):04d}",
+                    "parameters": parameters,
+                    "metrics": [],
+                    "trial_ids": [],
+                    "run_dirs": [],
+                },
+            )
+            group["metrics"].append(float(metric))
+            group["trial_ids"].append(row["trial_id"])
+            group["run_dirs"].append(row["run_dir"])
+
+        groups: list[dict[str, Any]] = []
+        for group in grouped.values():
+            metrics = group.pop("metrics")
+            metric_mean = sum(metrics) / len(metrics)
+            metric_min = min(metrics)
+            metric_max = max(metrics)
+            groups.append(
+                {
+                    **group,
+                    "metric": metric_mean,
+                    "metric_mean": metric_mean,
+                    "metric_min": metric_min,
+                    "metric_max": metric_max,
+                    "metric_count": len(metrics),
+                }
+            )
+
+        reverse = metric_goal == "maximize"
+        groups.sort(key=lambda group: float(group["metric_mean"]), reverse=reverse)
+        return groups
+
+    def _non_seed_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: value
+            for key, value in parameters.items()
+            if not self._is_seed_parameter(key)
+        }
+
+    def _is_seed_parameter(self, key: str) -> bool:
+        normalized = key.lower()
+        return normalized == "seed" or normalized.endswith("_seed") or normalized.endswith(".seed")
 
     def _trial_metric_value(
         self,
