@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Boxes, Brain, Database, FlaskConical, FolderOpen, GitBranch, ListChecks, Map, RefreshCw, Save } from "lucide-react";
+import { Boxes, Brain, Database, FlaskConical, FolderOpen, GitBranch, ListChecks, Map, RefreshCw, Save, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 import { api } from "../api/client";
 import { ComponentPalette } from "../components/flow/ComponentPalette";
 import { EnvironmentPlayground } from "../components/environments/EnvironmentPlayground";
 import { DatasetPage } from "../components/datasets/DatasetPage";
 import { OfflineRlPage } from "../components/datasets/OfflineRlPage";
+import { SweepPage } from "../components/sweeps/SweepPage";
 import { InspectorPanel } from "../components/flow/InspectorPanel";
 import { ValidationPanel } from "../components/flow/ValidationPanel";
 import { WorkflowCanvas } from "../components/flow/WorkflowCanvas";
@@ -14,7 +15,7 @@ import { JobsPage } from "../components/jobs/JobsPage";
 import { useFlowStore } from "../stores/flowStore";
 import type { ExperimentSpec, ValidationResult } from "../types/schema";
 
-type Page = "flow" | "jobs" | "experiment" | "environment" | "dataset" | "offline";
+type Page = "flow" | "jobs" | "experiment" | "environment" | "dataset" | "offline" | "sweep";
 
 export function App() {
   const queryClient = useQueryClient();
@@ -84,6 +85,10 @@ export function App() {
           <Brain size={16} />
           Offline RL
         </button>
+        <button className={page === "sweep" ? "active" : ""} onClick={() => setPage("sweep")}>
+          <SlidersHorizontal size={16} />
+          Sweep
+        </button>
         <button className={page === "experiment" ? "active" : ""} onClick={() => setPage("experiment")}>
           <FlaskConical size={16} />
           Experiment
@@ -152,6 +157,7 @@ export function App() {
       {page === "environment" && <EnvironmentPlayground components={components.data ?? []} isLoading={components.isLoading} />}
       {page === "dataset" && <DatasetPage />}
       {page === "offline" && <OfflineRlPage />}
+      {page === "sweep" && <SweepPage />}
       {page === "experiment" && <ExperimentDetail />}
     </div>
   );

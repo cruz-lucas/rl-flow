@@ -224,13 +224,14 @@ def sweep_summarize(
     path: Path,
     metric: str | None = typer.Option(None, "--metric"),
     goal: str | None = typer.Option(None, "--goal", help="maximize or minimize"),
+    metric_last_n: int | None = typer.Option(None, "--metric-last-n", min=1),
 ) -> None:
     if path.is_dir():
         path = path / "sweep_manifest.yaml"
     if goal is not None and goal not in {"maximize", "minimize"}:
         typer.echo("--goal must be maximize or minimize", err=True)
         raise typer.Exit(code=1)
-    summary = SweepCompiler(_registry()).summarize(path, metric=metric, goal=goal)
+    summary = SweepCompiler(_registry()).summarize(path, metric=metric, goal=goal, metric_last_n=metric_last_n)
     typer.echo(yaml.safe_dump(summary, sort_keys=True))
 
 

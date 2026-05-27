@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import copy
 import json
 import math
 import random
+import re
 import stat
 from itertools import product
 from pathlib import Path
@@ -16,6 +18,9 @@ from rlflow.graph.run_naming import make_run_id, slugify_run_name
 from rlflow.registry.base import ComponentRegistry
 from rlflow.schemas.sweep import SweepCompilation, SweepParameter, SweepSpec, SweepTrial
 from rlflow.schemas.workflow import WorkflowSpec
+
+
+_TRAIN_RETURN_LAST_RE = re.compile(r"^mean_train_return_last_(\d+)$")
 
 
 class SweepCompilationError(ValueError):
@@ -123,18 +128,16 @@ class SweepCompiler:
         *,
         metric: str | None = None,
         goal: str | None = None,
+        metric_last_n: int | None = None,
     ) -> dict[str, Any]:
         manifest_data = yaml.safe_load(Path(manifest_path).read_text(encoding="utf-8"))
         compilation = SweepCompilation.model_validate(manifest_data)
         metric_name = metric or compilation.metric.name
         metric_goal = goal or compilation.metric.goal
+        resolved_last_n = metric_last_n or compilation.metric.last_n
         rows = []
         for trial in compilation.trials:
-            metrics_path = Path(trial.metrics_path)
-            metrics = {}
-            if metrics_path.exists():
-                metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
-            value = metrics.get(metric_name)
+            value = self._trial_metric_value(trial, metric_name, resolved_last_n)
             rows.append(
                 {
                     "trial_id": trial.trial_id,
@@ -148,14 +151,54 @@ class SweepCompiler:
         reverse = metric_goal == "maximize"
         completed = [row for row in rows if isinstance(row["metric"], (int, float))]
         completed.sort(key=lambda row: float(row["metric"]), reverse=reverse)
-        best = completed[0] if completed else None
+        best = copy.deepcopy(completed[0]) if completed else None
         return {
             "sweep_id": compilation.sweep_id,
             "metric": metric_name,
             "goal": metric_goal,
+            "metric_last_n": resolved_last_n,
             "best": best,
             "trials": rows,
         }
+
+    def _trial_metric_value(
+        self,
+        trial: SweepTrial,
+        metric_name: str,
+        metric_last_n: int | None,
+    ) -> float | int | None:
+        metrics_path = Path(trial.metrics_path)
+        metrics = {}
+        if metrics_path.exists():
+            metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+        if metric_name in metrics:
+            value = metrics[metric_name]
+            return value if isinstance(value, (int, float)) else None
+        if metric_name == "mean_train_return":
+            return self._mean_train_return(Path(trial.run_dir), None)
+        if metric_name == "mean_train_return_last_n":
+            return self._mean_train_return(Path(trial.run_dir), metric_last_n or 10)
+        match = _TRAIN_RETURN_LAST_RE.match(metric_name)
+        if match is not None:
+            return self._mean_train_return(Path(trial.run_dir), int(match.group(1)))
+        return None
+
+    def _mean_train_return(self, run_dir: Path, count: int | None) -> float | None:
+        history_path = run_dir / "logs" / "train_history.jsonl"
+        if not history_path.exists():
+            return None
+        returns: list[float] = []
+        for line in history_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            value = row.get("return")
+            if isinstance(value, (int, float)):
+                returns.append(float(value))
+        if not returns:
+            return None
+        window = returns[-count:] if count is not None else returns
+        return sum(window) / len(window)
 
     def _load_workflow(self, workflow: str | WorkflowSpec, *, base_path: str | Path | None) -> WorkflowSpec:
         if isinstance(workflow, WorkflowSpec):

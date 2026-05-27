@@ -2,6 +2,7 @@ import jax
 import pytest
 
 from rlflow.registry.builtin import create_default_registry
+from rlflow_builtin.dqn.training import _coerce_navix_settings
 from rlflow_builtin.environments.navix import NavixWrapper, create_navix_environment
 
 
@@ -17,6 +18,12 @@ def test_navix_component_is_registered_under_navix_source() -> None:
         "state_features",
         "symbolic",
         "rgb",
+    ]
+    assert component.config_schema["properties"]["symbolic_distractor"]["enum"] == [
+        "none",
+        "corner_wall_color",
+        "shared_wall_color",
+        "independent_wall_color",
     ]
 
 
@@ -133,6 +140,72 @@ def test_original_navix_observation_modes(observation_mode: str) -> None:
         assert observation.shape == (5, 5, 3)
     else:
         assert observation.ndim == 3
+
+
+def test_symbolic_corner_wall_distractor_changes_over_time() -> None:
+    env = create_navix_environment(
+        env_name="empty_room",
+        size=5,
+        layout="fixed",
+        observation_mode="symbolic",
+        action_set="cardinal",
+        symbolic_distractor="corner_wall_color",
+    )
+    timestep = env.reset(jax.random.PRNGKey(0))
+    values = [int(timestep.observation[0, -1, 1])]
+    for _ in range(4):
+        timestep = env.step(timestep, 3)
+        values.append(int(timestep.observation[0, -1, 1]))
+
+    assert len(set(values)) > 1
+
+
+def test_shared_wall_distractor_uses_one_value_for_all_walls() -> None:
+    env = create_navix_environment(
+        env_name="empty_room",
+        size=5,
+        layout="fixed",
+        observation_mode="symbolic",
+        action_set="cardinal",
+        symbolic_distractor="shared_wall_color",
+    )
+
+    timestep = env.reset(jax.random.PRNGKey(0))
+    observation = timestep.observation
+    wall_values = observation[observation[..., 0] == 2, 1]
+
+    assert len(set(map(int, wall_values))) == 1
+
+
+def test_dqn_navix_settings_preserve_symbolic_distractor() -> None:
+    settings = _coerce_navix_settings(
+        {
+            "env_name": "empty_room",
+            "size": 16,
+            "layout": "fixed",
+            "observation_mode": "symbolic",
+            "action_set": "cardinal",
+            "max_steps": 2048,
+            "symbolic_distractor": "independent_wall_color",
+        }
+    )
+
+    assert settings["symbolic_distractor"] == "independent_wall_color"
+
+
+def test_symbolic_distractors_require_symbolic_empty_room() -> None:
+    with pytest.raises(ValueError, match="require observation_mode='symbolic'"):
+        create_navix_environment(
+            env_name="empty_room",
+            observation_mode="tabular",
+            symbolic_distractor="corner_wall_color",
+        )
+    with pytest.raises(ValueError, match="only supported for empty_room"):
+        create_navix_environment(
+            env_name="doorkey",
+            observation_mode="symbolic",
+            symbolic_distractor="corner_wall_color",
+        )
 
 
 def test_cardinal_action_set_is_only_for_empty_room() -> None:

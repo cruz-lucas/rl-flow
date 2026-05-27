@@ -2231,6 +2231,7 @@ def _coerce_navix_settings(settings: dict[str, Any]) -> dict[str, Any]:
         "observation_mode": settings["observation_mode"],
         "action_set": settings["action_set"],
         "max_steps": settings["max_steps"],
+        "symbolic_distractor": settings.get("symbolic_distractor", "none"),
     }
 
 

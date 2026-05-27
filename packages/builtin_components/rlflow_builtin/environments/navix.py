@@ -34,6 +34,12 @@ NavixEnvName = Literal["empty_room", "doorkey"]
 NavixLayout = Literal["fixed", "random", "layout1", "layout2", "layout3"]
 NavixObservationMode = Literal["tabular", "one_hot", "state_features", "symbolic", "rgb"]
 NavixActionSet = Literal["default", "cardinal"]
+NavixSymbolicDistractor = Literal[
+    "none",
+    "corner_wall_color",
+    "shared_wall_color",
+    "independent_wall_color",
+]
 
 SUPPORTED_SIZES = (5, 6, 8, 16)
 FIXED_DOORKEY_LAYOUTS: dict[int, dict[str, dict[str, int]]] = {
@@ -58,6 +64,7 @@ class NavixSpec:
     layout: NavixLayout
     observation_mode: NavixObservationMode
     action_set: NavixActionSet
+    symbolic_distractor: NavixSymbolicDistractor = "none"
 
     @property
     def inner_states(self) -> int:
@@ -177,8 +184,16 @@ def create_navix_environment(
     observation_mode: NavixObservationMode = "symbolic",
     action_set: NavixActionSet = "default",
     max_steps: int | None = None,
+    symbolic_distractor: NavixSymbolicDistractor = "none",
 ) -> nx.Environment:
-    spec = _validate_spec(env_name, size, layout, observation_mode, action_set)
+    spec = _validate_spec(
+        env_name,
+        size,
+        layout,
+        observation_mode,
+        action_set,
+        symbolic_distractor,
+    )
     observation_fn, observation_space = _observation_config(spec)
     resolved_action_set = _action_set(spec)
     max_steps = max_steps or 4 * size * size
@@ -193,26 +208,30 @@ def create_navix_environment(
     if observation_space is not None:
         kwargs["observation_space"] = observation_space
 
+    env: nx.Environment
     if spec.env_name == "empty_room":
-        return EmptyRoom.create(
+        env = EmptyRoom.create(
             height=size,
             width=size,
             random_start=spec.layout == "random",
             **kwargs,
         )
-
-    if spec.fixed_layout:
+    elif spec.fixed_layout:
         layout_name = "layout1" if spec.layout == "fixed" else spec.layout
         layout_kwargs = FIXED_DOORKEY_LAYOUTS[size][layout_name]
-        return FixedLayoutDoorKey.create(
+        env = FixedLayoutDoorKey.create(
             height=size,
             width=size,
             random_start=False,
             **layout_kwargs,
             **kwargs,
         )
+    else:
+        env = nx.make(f"Navix-DoorKey-Random-{size}x{size}-v0", **kwargs)
 
-    return nx.make(f"Navix-DoorKey-Random-{size}x{size}-v0", **kwargs)
+    if spec.symbolic_distractor != "none":
+        return FreshKeyObservationEnv(env)
+    return env
 
 
 if gin is not None:
@@ -230,6 +249,7 @@ class NavixWrapper:
         observation_mode: NavixObservationMode = "symbolic",
         action_set: NavixActionSet = "default",
         max_steps: int | None = None,
+        symbolic_distractor: NavixSymbolicDistractor = "none",
     ) -> None:
         self.env = create_navix_environment(
             env_name=env_name,
@@ -238,6 +258,7 @@ class NavixWrapper:
             observation_mode=observation_mode,
             action_set=action_set,
             max_steps=max_steps,
+            symbolic_distractor=symbolic_distractor,
         )
         self.observation_shape = tuple(self.env.observation_space.shape)
         self.observation_dtype = np.dtype(self.env.observation_space.dtype)
@@ -269,6 +290,7 @@ def _validate_spec(
     layout: str,
     observation_mode: str,
     action_set: str,
+    symbolic_distractor: str,
 ) -> NavixSpec:
     if env_name not in {"empty_room", "doorkey"}:
         raise ValueError("Navix env_name must be 'empty_room' or 'doorkey'")
@@ -280,6 +302,17 @@ def _validate_spec(
         raise ValueError("Unsupported Navix observation_mode")
     if action_set not in {"default", "cardinal"}:
         raise ValueError("Navix action_set must be 'default' or 'cardinal'")
+    if symbolic_distractor not in {
+        "none",
+        "corner_wall_color",
+        "shared_wall_color",
+        "independent_wall_color",
+    }:
+        raise ValueError("Unsupported Navix symbolic_distractor")
+    if symbolic_distractor != "none" and env_name != "empty_room":
+        raise ValueError("Symbolic distractors are only supported for empty_room")
+    if symbolic_distractor != "none" and observation_mode != "symbolic":
+        raise ValueError("Symbolic distractors require observation_mode='symbolic'")
     if env_name == "doorkey" and action_set == "cardinal":
         raise ValueError("The cardinal action set is only supported for empty_room")
     if env_name == "empty_room" and layout in {"layout1", "layout2", "layout3"}:
@@ -295,6 +328,7 @@ def _validate_spec(
         layout=layout,  # type: ignore[arg-type]
         observation_mode=observation_mode,  # type: ignore[arg-type]
         action_set=action_set,  # type: ignore[arg-type]
+        symbolic_distractor=symbolic_distractor,  # type: ignore[arg-type]
     )
 
 
@@ -306,6 +340,15 @@ def _action_set(spec: NavixSpec):
 
 def _observation_config(spec: NavixSpec) -> tuple[Callable[[State], Array], Space | None]:
     if spec.observation_mode == "symbolic":
+        if spec.symbolic_distractor != "none":
+            return (
+                partial(symbolic_distractor_observation, mode=spec.symbolic_distractor),
+                Discrete.create(
+                    256,
+                    shape=(spec.height, spec.width, 3),
+                    dtype=jnp.uint8,
+                ),
+            )
         return observations.symbolic, None
     if spec.observation_mode == "rgb":
         return observations.rgb, None
@@ -325,6 +368,46 @@ def _observation_config(spec: NavixSpec) -> tuple[Callable[[State], Array], Spac
         shape=(_feature_size(spec),),
         dtype=jnp.float32,
     )
+
+
+class FreshKeyObservationEnv:
+    """Recomputes observations with a freshly split state key on every timestep."""
+
+    def __init__(self, env: nx.Environment) -> None:
+        self.env = env
+        self.action_space = env.action_space
+        self.observation_space = env.observation_space
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.env, name)
+
+    def reset(self, key: Array, cache: RenderingCache | None = None) -> Timestep:
+        return self._refresh_observation(self.env.reset(key, cache))
+
+    def step(self, timestep: Timestep, action: Array) -> Timestep:
+        return self._refresh_observation(self.env.step(timestep, action))
+
+    def _refresh_observation(self, timestep: Timestep) -> Timestep:
+        observation_key, next_key = jax.random.split(timestep.state.key)
+        observation_state = timestep.state.replace(key=observation_key)
+        observation = self.env.observation_fn(observation_state)
+        return timestep.replace(
+            state=observation_state.replace(key=next_key),
+            observation=observation,
+        )
+
+
+def symbolic_distractor_observation(state: State, *, mode: NavixSymbolicDistractor) -> Array:
+    obs = observations.symbolic(state)
+    wall_mask = state.grid == -1
+    if mode == "corner_wall_color":
+        value = jax.random.randint(state.key, (), 0, 256, dtype=jnp.uint8)
+        return obs.at[0, -1, 1].set(value)
+    if mode == "shared_wall_color":
+        value = jax.random.randint(state.key, (), 0, 256, dtype=jnp.uint8)
+        return obs.at[..., 1].set(jnp.where(wall_mask, value, obs[..., 1]))
+    values = jax.random.randint(state.key, state.grid.shape, 0, 256, dtype=jnp.uint8)
+    return obs.at[..., 1].set(jnp.where(wall_mask, values, obs[..., 1]))
 
 
 def tabular_observation(state: State, *, spec: NavixSpec) -> Array:

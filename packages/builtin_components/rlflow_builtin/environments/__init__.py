@@ -26,6 +26,15 @@ def environment_components() -> list[ComponentSpec]:
                     },
                     "action_set": {"type": "string", "enum": ["default", "cardinal"]},
                     "max_steps": {"type": ["integer", "null"], "minimum": 1},
+                    "symbolic_distractor": {
+                        "type": "string",
+                        "enum": [
+                            "none",
+                            "corner_wall_color",
+                            "shared_wall_color",
+                            "independent_wall_color",
+                        ],
+                    },
                 }
             ),
             defaults={
@@ -35,6 +44,7 @@ def environment_components() -> list[ComponentSpec]:
                 "observation_mode": "tabular",
                 "action_set": "default",
                 "max_steps": None,
+                "symbolic_distractor": "none",
             },
             compile_target={
                 "gin": {
@@ -50,6 +60,7 @@ def environment_components() -> list[ComponentSpec]:
                         "create_navix_environment.observation_mode": "observation_mode",
                         "create_navix_environment.action_set": "action_set",
                         "create_navix_environment.max_steps": "max_steps",
+                        "create_navix_environment.symbolic_distractor": "symbolic_distractor",
                     },
                 }
             },

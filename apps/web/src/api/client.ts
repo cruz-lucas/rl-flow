@@ -6,6 +6,13 @@ import type {
   EnvironmentSessionSnapshot,
   ExperimentSpec,
   JobInfo,
+  SweepBuildRequest,
+  SweepCandidateResponse,
+  SweepCompilation,
+  SweepInspectRequest,
+  SweepListItem,
+  SweepRunResponse,
+  SweepSummary,
   ValidationResult,
   WorkflowGalleryItem,
   WorkflowSpec,
@@ -117,6 +124,24 @@ export const api = {
     seed: number;
   }) =>
     request<OfflineRndAnalysis>("/datasets/offline-rnd", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  sweepCandidates: (workflowId: string) =>
+    request<SweepCandidateResponse>(`/sweeps/workflows/${encodeURIComponent(workflowId)}/candidates`),
+  sweeps: () => request<SweepListItem[]>("/sweeps"),
+  compileSweep: (payload: SweepBuildRequest) =>
+    request<SweepCompilation>("/sweeps/compile", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  runSweep: (payload: SweepBuildRequest) =>
+    request<SweepRunResponse>("/sweeps/run", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  inspectSweep: (payload: SweepInspectRequest) =>
+    request<SweepSummary>("/sweeps/inspect", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

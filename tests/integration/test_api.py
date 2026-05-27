@@ -43,6 +43,77 @@ def test_api_saves_and_loads_workflow_gallery(monkeypatch, tmp_path) -> None:
     assert loaded["nodes"][0]["component"] == "builtin.env.riverswim"
 
 
+def test_api_compiles_sweep_from_saved_workflow(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("RLFLOW_DB_PATH", str(tmp_path / "rlflow.db"))
+    monkeypatch.setenv("RLFLOW_RUN_ROOT", str(tmp_path / "runs"))
+    client = TestClient(create_app())
+    workflow = yaml.safe_load(Path("configs/workflows/tabular_q_learning_riverswim.yaml").read_text(encoding="utf-8"))
+    saved = client.post("/workflows", json={"workflow": workflow}).json()
+
+    candidates = client.get(f"/sweeps/workflows/{saved['workflow_id']}/candidates")
+
+    assert candidates.status_code == 200
+    candidate_data = candidates.json()
+    assert any(item["target"] == "nodes.agent.config.learning_rate" for item in candidate_data["candidates"])
+    seed_target = candidate_data["seed_candidates"][0]["target"]
+
+    compiled = client.post(
+        "/sweeps/compile",
+        json={
+            "workflow_id": saved["workflow_id"],
+            "name": "api sweep",
+            "method": "grid",
+            "metric_name": "mean_eval_return",
+            "metric_goal": "maximize",
+            "parameters": [
+                {
+                    "label": "lr",
+                    "target": "nodes.agent.config.learning_rate",
+                    "values": [0.05, 0.1],
+                }
+            ],
+            "seed_target": seed_target,
+            "seed_count": 2,
+            "seed_start": 0,
+        },
+    )
+
+    assert compiled.status_code == 200
+    sweep = compiled.json()
+    assert len(sweep["trials"]) == 4
+    assert Path(sweep["manifest_path"]).exists()
+    assert Path(sweep["trials"][0]["workflow_path"]).exists()
+    history_path = Path(sweep["trials"][0]["run_dir"]) / "logs" / "train_history.jsonl"
+    history_path.parent.mkdir(parents=True, exist_ok=True)
+    history_path.write_text(
+        "\n".join(
+            [
+                '{"episode": 0, "return": 1.0, "length": 1, "loss": 0.0}',
+                '{"episode": 1, "return": 3.0, "length": 1, "loss": 0.0}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    listed = client.get("/sweeps")
+    assert listed.status_code == 200
+    assert listed.json()[0]["sweep_id"] == sweep["sweep_id"]
+
+    inspected = client.post(
+        "/sweeps/inspect",
+        json={
+            "path": sweep["manifest_path"],
+            "metric_name": "mean_train_return_last_n",
+            "metric_goal": "maximize",
+            "metric_last_n": 2,
+        },
+    )
+    assert inspected.status_code == 200
+    summary = inspected.json()
+    assert summary["best"]["trial_id"] == "trial-0000"
+    assert summary["best"]["metric"] == 2.0
+
+
 def test_api_run_creates_unique_runs_and_refreshes_job_status(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("RLFLOW_DB_PATH", str(tmp_path / "rlflow.db"))
     monkeypatch.setenv("RLFLOW_RUN_ROOT", str(tmp_path / "runs"))
@@ -232,7 +303,7 @@ def test_api_offline_rnd_analysis(monkeypatch, tmp_path) -> None:
     assert analysis["algorithm"] == "rnd"
     assert len(analysis["loss_history"]) == 1
     assert analysis["learned_state_action_bonus"][1][1][0] is not None
-    assert abs(analysis["count_state_action_bonus"][1][1][0] - 1 / (2**0.5 + 1)) < 1e-7
+    assert abs(analysis["count_state_action_bonus"][1][1][0] - 1 / (2**0.5)) < 1e-7
 
     for algorithm in ("cfn", "classifier"):
         response = client.post(

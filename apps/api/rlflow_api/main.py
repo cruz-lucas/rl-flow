@@ -8,7 +8,7 @@ from rlflow.execution.slurm import SlurmExecutor
 from rlflow.registry.builtin import create_default_registry
 from rlflow.storage.filesystem import FilesystemArtifactStore
 from rlflow_api.db import create_storage
-from rlflow_api.routes import artifacts, components, datasets, environment_sessions, experiments, jobs, workflows
+from rlflow_api.routes import artifacts, components, datasets, environment_sessions, experiments, jobs, sweeps, workflows
 from rlflow_api.settings import get_settings
 
 
@@ -41,6 +41,7 @@ def create_app() -> FastAPI:
     app.include_router(artifacts.router)
     app.include_router(environment_sessions.router)
     app.include_router(datasets.router)
+    app.include_router(sweeps.router)
     return app
 
 

@@ -17,6 +17,7 @@ class SweepMetric(BaseModel):
 
     name: str = "mean_eval_return"
     goal: SweepGoal = "maximize"
+    last_n: int | None = Field(default=None, ge=1)
 
 
 class SweepParameter(BaseModel):

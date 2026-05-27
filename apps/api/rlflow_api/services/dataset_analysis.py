@@ -213,9 +213,17 @@ def offline_rnd_analysis(
         learned_bonus = learned_bonus.reshape(unique_indices.shape[0], action_count).mean(
             axis=1
         )
-    count_bonus = 1.0 / (np.sqrt(unique_counts.astype(np.float32)) + 1e-8)
     visitation = transition_visitation(observations, actions)
     decoding = decode_grid_positions(observations)
+    reference_counts = _oracle_reference_counts(
+        decoding,
+        action_values,
+        unique_indices,
+        display_actions,
+        granularity,
+        fallback_counts=unique_counts,
+    )
+    count_bonus = 1.0 / (np.sqrt(reference_counts.astype(np.float32)) + 1e-8)
 
     learned_state_bonus = None
     count_state_bonus = None
@@ -226,15 +234,23 @@ def offline_rnd_analysis(
     if decoding is not None:
         unique_positions = decoding.positions[unique_indices]
         if granularity == "state_action":
-            learned_state_action_bonus = _empty_3d(
+            learned_state_action_bonus = _weighted_grid_3d(
                 decoding.height,
                 decoding.width,
                 action_count,
+                unique_positions,
+                display_actions,
+                learned_bonus,
+                unique_counts,
             )
-            count_state_action_bonus = _empty_3d(
+            count_state_action_bonus = _weighted_grid_3d(
                 decoding.height,
                 decoding.width,
                 action_count,
+                unique_positions,
+                display_actions,
+                count_bonus,
+                unique_counts,
             )
             for idx, ((row, col), action) in enumerate(
                 zip(unique_positions, display_actions, strict=True)
@@ -251,15 +267,9 @@ def offline_rnd_analysis(
                     or action_i >= action_count
                 ):
                     continue
-                learned_state_action_bonus[row_i][col_i][action_i] = float(
-                    learned_bonus[idx]
-                )
-                count_state_action_bonus[row_i][col_i][action_i] = float(
-                    count_bonus[idx]
-                )
                 scatter.append(
                     _scatter_point(
-                        unique_counts[idx],
+                        reference_counts[idx],
                         learned_bonus[idx],
                         count_bonus[idx],
                         row=row_i,
@@ -285,7 +295,7 @@ def offline_rnd_analysis(
             for idx, (row, col) in enumerate(unique_positions):
                 scatter.append(
                     _scatter_point(
-                        unique_counts[idx],
+                        reference_counts[idx],
                         learned_bonus[idx],
                         count_bonus[idx],
                         row=int(row),
@@ -297,7 +307,7 @@ def offline_rnd_analysis(
         for idx in range(unique_counts.shape[0]):
             scatter.append(
                 _scatter_point(
-                    unique_counts[idx],
+                    reference_counts[idx],
                     learned_bonus[idx],
                     count_bonus[idx],
                     row=None,
@@ -989,6 +999,53 @@ def _looks_one_hot(values: np.ndarray) -> bool:
     )
 
 
+def _oracle_reference_counts(
+    decoding: GridDecoding | None,
+    actions: np.ndarray,
+    eval_indices: np.ndarray,
+    display_actions: np.ndarray,
+    granularity: Literal["state", "state_action"],
+    *,
+    fallback_counts: np.ndarray,
+) -> np.ndarray:
+    if decoding is None:
+        return fallback_counts
+    positions = decoding.positions.astype(np.int32)
+    eval_positions = positions[eval_indices]
+    if granularity == "state_action":
+        all_keys = np.concatenate(
+            (positions, actions.reshape(-1, 1).astype(np.int32)),
+            axis=1,
+        )
+        eval_keys = np.concatenate(
+            (eval_positions, display_actions.reshape(-1, 1).astype(np.int32)),
+            axis=1,
+        )
+    else:
+        all_keys = positions
+        eval_keys = eval_positions
+    return _counts_for_keys(all_keys, eval_keys)
+
+
+def _counts_for_keys(all_keys: np.ndarray, eval_keys: np.ndarray) -> np.ndarray:
+    _unique_keys, inverse, counts = np.unique(
+        all_keys,
+        axis=0,
+        return_inverse=True,
+        return_counts=True,
+    )
+    key_counts: dict[tuple[int, ...], int] = {}
+    for key_index, key in enumerate(all_keys):
+        key_counts.setdefault(
+            tuple(int(value) for value in key),
+            int(counts[inverse[key_index]]),
+        )
+    return np.asarray(
+        [key_counts.get(tuple(int(value) for value in key), 1) for key in eval_keys],
+        dtype=np.int32,
+    )
+
+
 def _empty_3d(height: int, width: int, depth: int) -> list[list[list[float | None]]]:
     return [[[None for _ in range(depth)] for _ in range(width)] for _ in range(height)]
 
@@ -1018,6 +1075,49 @@ def _weighted_grid(
             else:
                 output_row.append(float(value_sum[row, col] / weight_sum[row, col]))
         output.append(output_row)
+    return output
+
+
+def _weighted_grid_3d(
+    height: int,
+    width: int,
+    depth: int,
+    positions: np.ndarray,
+    actions: np.ndarray,
+    values: np.ndarray,
+    weights: np.ndarray,
+) -> list[list[list[float | None]]]:
+    value_sum = np.zeros((height, width, depth), dtype=np.float64)
+    weight_sum = np.zeros((height, width, depth), dtype=np.float64)
+    for (row, col), action, value, weight in zip(
+        positions,
+        actions,
+        values,
+        weights,
+        strict=True,
+    ):
+        row_i = int(row)
+        col_i = int(col)
+        action_i = int(action)
+        if (
+            row_i < 0
+            or col_i < 0
+            or row_i >= height
+            or col_i >= width
+            or action_i < 0
+            or action_i >= depth
+        ):
+            continue
+        value_sum[row_i, col_i, action_i] += float(value) * float(weight)
+        weight_sum[row_i, col_i, action_i] += float(weight)
+    output = _empty_3d(height, width, depth)
+    for row in range(height):
+        for col in range(width):
+            for action in range(depth):
+                if weight_sum[row, col, action] > 0.0:
+                    output[row][col][action] = float(
+                        value_sum[row, col, action] / weight_sum[row, col, action]
+                    )
     return output
 
 

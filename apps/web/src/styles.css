@@ -526,6 +526,102 @@ button:disabled {
   font-size: 12px;
 }
 
+.observation-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.symbolic-preview-panel,
+.sweep-panel {
+  min-width: 0;
+  background: #ffffff;
+  border: 1px solid #d9e0e8;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.symbolic-preview-panel pre {
+  max-height: 240px;
+  overflow: auto;
+  margin: 0;
+  border-radius: 6px;
+  background: #101820;
+  color: #d6ecea;
+  padding: 8px;
+  font-size: 12px;
+}
+
+.symbolic-preview-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid #d9e0e8;
+  background: #ffffff;
+}
+
+.muted-line {
+  display: block;
+  color: #69798a;
+  font-size: 11px;
+  margin-top: 3px;
+}
+
+.sweep-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.95fr) minmax(440px, 1.35fr);
+  gap: 18px;
+}
+
+.sweep-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.sweep-controls .wide {
+  grid-column: span 2;
+  min-width: min(100%, 320px);
+}
+
+.selected-sweep-params {
+  display: grid;
+  gap: 10px;
+}
+
+.sweep-param-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.35fr) minmax(220px, 1fr) 32px;
+  gap: 8px;
+  align-items: end;
+}
+
+.sweep-param-row .wide span {
+  overflow-wrap: anywhere;
+}
+
+.sweep-result {
+  grid-column: 1 / -1;
+}
+
+.sweep-paths {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 6px 12px;
+  font-size: 13px;
+}
+
+.sweep-paths dt {
+  color: #607085;
+}
+
+.sweep-paths dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
 .environment-page {
   min-height: 0;
   display: grid;
@@ -667,11 +763,15 @@ button:disabled {
   }
 
   .dataset-controls,
-  .offline-controls {
+  .offline-controls,
+  .sweep-layout,
+  .sweep-controls {
     grid-template-columns: 1fr;
   }
 
-  .offline-controls .wide {
+  .offline-controls .wide,
+  .sweep-controls .wide,
+  .sweep-result {
     grid-column: auto;
   }
 

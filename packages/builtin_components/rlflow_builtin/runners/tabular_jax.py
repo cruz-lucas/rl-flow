@@ -206,7 +206,7 @@ def _write_tabular_outputs(
         "runner": runner_component,
         "train_episodes": int(runner_settings["train_episodes"]),
         "train_steps": runner_settings.get("train_steps"),
-        "mean_train_return_last_10": _mean_last(result.train_returns, 10),
+        **_train_return_metrics(result.train_returns),
         "mean_eval_return": (
             float(np.mean(result.eval_returns)) if len(result.eval_returns) else None
         ),
@@ -275,7 +275,7 @@ def _write_dqn_outputs(
         "runner": runner_component,
         "train_episodes": int(runner_settings["train_episodes"]),
         "train_steps": runner_settings.get("train_steps"),
-        "mean_train_return_last_10": _mean_last(result.train_returns, 10),
+        **_train_return_metrics(result.train_returns),
         "mean_eval_return": (
             float(np.mean(result.eval_returns)) if len(result.eval_returns) else None
         ),
@@ -384,6 +384,19 @@ def _mean_last(values: np.ndarray, count: int) -> float | None:
     if len(values) == 0:
         return None
     return float(np.mean(values[-count:]))
+
+
+def _mean_all(values: np.ndarray) -> float | None:
+    if len(values) == 0:
+        return None
+    return float(np.mean(values))
+
+
+def _train_return_metrics(values: np.ndarray) -> dict[str, float | None]:
+    return {
+        "mean_train_return": _mean_all(values),
+        "mean_train_return_last_10": _mean_last(values, 10),
+    }
 
 
 def _resolve_output_path(path: str, run_dir: Path) -> Path:

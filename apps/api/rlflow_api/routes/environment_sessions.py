@@ -83,7 +83,8 @@ def reset_session(session_id: str, request: Request) -> EnvironmentSessionSnapsh
 @router.get("/{session_id}/export.pdf")
 def export_pdf(session_id: str, request: Request) -> Response:
     session = _get_session(session_id, request)
-    symbolic = _symbolic_grid(session.timestep.state)
+    observation = np.asarray(jax.device_get(session.timestep.observation))
+    symbolic = _visible_symbolic_grid(session, observation)
     pdf = _render_pdf(symbolic)
     filename = f"{session.component_id.replace('.', '_')}_step_{session.step}.pdf"
     return Response(
@@ -150,7 +151,7 @@ def _snapshot(session_id: str, session: EnvironmentSession) -> EnvironmentSessio
         observation_dtype=str(observation.dtype),
         observation_preview=observation_preview,
         observation_truncated=observation_truncated,
-        svg=_render_svg(_symbolic_grid(timestep.state)),
+        svg=_render_svg(_visible_symbolic_grid(session, observation)),
     )
 
 
@@ -197,6 +198,16 @@ def _symbolic_grid(state: Any) -> np.ndarray:
     return symbolic
 
 
+def _visible_symbolic_grid(session: EnvironmentSession, observation: np.ndarray) -> np.ndarray:
+    if (
+        session.config.get("observation_mode") == "symbolic"
+        and observation.ndim == 3
+        and observation.shape[-1] == 3
+    ):
+        return np.rint(observation).astype(np.uint8)
+    return _symbolic_grid(session.timestep.state)
+
+
 def _render_svg(symbolic: np.ndarray, cell_size: int = 44) -> str:
     height, width, _ = symbolic.shape
     canvas_width = width * cell_size
@@ -222,11 +233,12 @@ def _render_svg(symbolic: np.ndarray, cell_size: int = 44) -> str:
 
 def _svg_cell(cell: np.ndarray, x: int, y: int, size: int) -> list[str]:
     entity = int(cell[0])
+    colour = int(cell[1])
     state = int(cell[2])
     pad = size * 0.16
     center_x = x + size / 2
     center_y = y + size / 2
-    parts = [f'<rect x="{x}" y="{y}" width="{size}" height="{size}" fill="{_cell_fill(entity)}"/>']
+    parts = [f'<rect x="{x}" y="{y}" width="{size}" height="{size}" fill="{_cell_fill(entity, colour)}"/>']
     if entity == 4:
         fill = "#f4c76b" if state == 0 else "#b87928"
         parts.append(
@@ -250,10 +262,29 @@ def _svg_cell(cell: np.ndarray, x: int, y: int, size: int) -> list[str]:
     return parts
 
 
-def _cell_fill(entity: int) -> str:
+def _cell_fill(entity: int, colour: int = 0) -> str:
     if entity == 2:
+        if colour != 5:
+            return _wall_colour_fill(colour)
         return "#2f3a45"
     return "#fbfcfd"
+
+
+def _wall_colour_fill(colour: int) -> str:
+    hue = (int(colour) * 137) % 360
+    saturation = 48 + int(colour) % 32
+    lightness = 30 + (int(colour) // 8) % 26
+    return _hsl_to_hex(hue / 360.0, saturation / 100.0, lightness / 100.0)
+
+
+def _hsl_to_hex(hue: float, saturation: float, lightness: float) -> str:
+    def channel(offset: float) -> int:
+        k = (offset + hue * 12.0) % 12.0
+        a = saturation * min(lightness, 1.0 - lightness)
+        value = lightness - a * max(-1.0, min(k - 3.0, 9.0 - k, 1.0))
+        return int(round(255.0 * value))
+
+    return f"#{channel(0):02x}{channel(8):02x}{channel(4):02x}"
 
 
 def _player_points(cx: float, cy: float, radius: float, direction: int) -> str:
@@ -293,8 +324,9 @@ def _render_pdf(symbolic: np.ndarray) -> bytes:
 
 def _pdf_cell(cell: np.ndarray, x: float, y: float, size: float) -> list[str]:
     entity = int(cell[0])
+    colour = int(cell[1])
     state = int(cell[2])
-    commands = [_pdf_fill(_cell_fill(entity)), f"{x:.2f} {y:.2f} {size:.2f} {size:.2f} re f"]
+    commands = [_pdf_fill(_cell_fill(entity, colour)), f"{x:.2f} {y:.2f} {size:.2f} {size:.2f} re f"]
     cx = x + size / 2
     cy = y + size / 2
     if entity == 4:

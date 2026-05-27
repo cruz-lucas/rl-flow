@@ -195,3 +195,109 @@ export interface OfflineRndAnalysis {
   count_state_action_bonus?: Array<Array<Array<number | null>>> | null;
   scatter: OfflineRndPoint[];
 }
+
+export interface SweepCandidate {
+  target: string;
+  label: string;
+  node_id: string;
+  component: string;
+  component_display_name: string;
+  field: string;
+  value: unknown;
+  value_type: "integer" | "number" | "boolean" | "choice" | string;
+  recommended_values: unknown[];
+}
+
+export interface SweepCandidateResponse {
+  workflow_id: string;
+  workflow_name: string;
+  candidates: SweepCandidate[];
+  seed_candidates: SweepCandidate[];
+}
+
+export interface SweepBuildParameter {
+  label: string;
+  target: string;
+  values?: unknown[] | null;
+  distribution?: "choice" | "uniform" | "loguniform" | "int_uniform";
+  minimum?: number | null;
+  maximum?: number | null;
+}
+
+export interface SweepBuildRequest {
+  workflow_id: string;
+  name?: string | null;
+  description?: string;
+  method: "grid" | "random";
+  metric_name: string;
+  metric_goal: "maximize" | "minimize";
+  metric_last_n?: number | null;
+  execution_backend?: "local" | "slurm" | null;
+  parameters: SweepBuildParameter[];
+  seed_target?: string | null;
+  seed_start: number;
+  seed_count: number;
+  num_trials?: number | null;
+  random_seed: number;
+  slurm_max_parallel?: number | null;
+}
+
+export interface SweepTrial {
+  index: number;
+  trial_id: string;
+  experiment_id: string;
+  parameters: Record<string, unknown>;
+  run_dir: string;
+  command: string;
+  workflow_path: string;
+  metrics_path: string;
+}
+
+export interface SweepCompilation {
+  sweep_id: string;
+  name: string;
+  method: "grid" | "random" | string;
+  metric: { name: string; goal: "maximize" | "minimize" | string; last_n?: number | null };
+  sweep_dir: string;
+  manifest_path: string;
+  slurm_array_path?: string | null;
+  trials: SweepTrial[];
+  generated_files: string[];
+}
+
+export interface SweepRunResponse {
+  compilation: SweepCompilation;
+  jobs: JobInfo[];
+}
+
+export interface SweepListItem {
+  path: string;
+  sweep_id: string;
+  name: string;
+  trial_count: number;
+  modified_time: number;
+}
+
+export interface SweepInspectRequest {
+  path: string;
+  metric_name: string;
+  metric_goal: "maximize" | "minimize";
+  metric_last_n?: number | null;
+}
+
+export interface SweepTrialSummary {
+  trial_id: string;
+  experiment_id: string;
+  run_dir: string;
+  parameters: Record<string, unknown>;
+  metric?: number | null;
+}
+
+export interface SweepSummary {
+  sweep_id: string;
+  metric: string;
+  goal: "maximize" | "minimize" | string;
+  metric_last_n?: number | null;
+  best?: SweepTrialSummary | null;
+  trials: SweepTrialSummary[];
+}

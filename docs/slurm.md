@@ -73,4 +73,5 @@ Summarize completed trials by reading each trial `metrics.json`:
 
 ```bash
 uv run python -m rlflow.cli sweep summarize runs/sweeps/navix-dqn
+uv run python -m rlflow.cli sweep summarize runs/sweeps/navix-dqn --metric mean_train_return_last_n --metric-last-n 50
 ```
