@@ -53,7 +53,8 @@ class DqnAgentConfig:
     obs_normalization_epsilon: float
     obs_normalization_clip: float | None
     rmax_bonus_threshold: float
-    rmax_v_max: float
+    rmax_decision_v_max: float
+    rmax_update_v_max: float
     seed: int
 
 
@@ -90,6 +91,7 @@ class DqnIntrinsicConfig:
     count_table_overflow: CountTableOverflow = "warn"
     count_bonus_exponent: float = 0.5
     count_min_count: float = 1.0
+    count_ignore_empty_room_distractor: bool = False
 
 
 @dataclass(frozen=True)
@@ -199,7 +201,18 @@ def dqn_agent_config(component_id: str, config: dict[str, Any]) -> DqnAgentConfi
         obs_normalization_epsilon=float(config.get("obs_normalization_epsilon", 1e-8)),
         obs_normalization_clip=config.get("obs_normalization_clip", 5.0),
         rmax_bonus_threshold=float(config.get("rmax_bonus_threshold", 0.5)),
-        rmax_v_max=float(config.get("rmax_v_max", 1.0 / max(1.0 - float(config["discount"]), 1e-6))),
+        rmax_decision_v_max=float(
+            config.get(
+                "rmax_decision_v_max",
+                config.get("rmax_v_max", 1.0 / max(1.0 - float(config["discount"]), 1e-6)),
+            )
+        ),
+        rmax_update_v_max=float(
+            config.get(
+                "rmax_update_v_max",
+                config.get("rmax_v_max", 1.0 / max(1.0 - float(config["discount"]), 1e-6)),
+            )
+        ),
         seed=int(config.get("seed", 0)),
     )
 
@@ -303,6 +316,9 @@ def dqn_intrinsic_config(
             ),
             count_bonus_exponent=float(config["count_bonus_exponent"]),
             count_min_count=float(config["count_min_count"]),
+            count_ignore_empty_room_distractor=bool(
+                config.get("count_ignore_empty_room_distractor", False)
+            ),
         )
     raise ValueError(f"Unsupported DQN intrinsic reward component: {component_id}")
 
@@ -1553,7 +1569,7 @@ def _q_loss(
     else:
         next_q = jnp.max(_apply_mlp(target_params, next_observations, agent.activation), axis=1)
     if agent.algorithm == "dqn_rmax":
-        next_q = jnp.where(next_unknown_any, agent.rmax_v_max, next_q)
+        next_q = jnp.where(next_unknown_any, agent.rmax_update_v_max, next_q)
     target = rewards + agent.discount * next_q * (1.0 - terminals)
     td_error = selected_q - jax.lax.stop_gradient(target)
     losses = _td_loss(td_error, agent.loss_type, agent.huber_delta)
@@ -1799,7 +1815,7 @@ def _rmax_action(
     ).squeeze(0)
     optimistic_values = jnp.where(
         bonuses > agent.rmax_bonus_threshold,
-        agent.rmax_v_max,
+        agent.rmax_decision_v_max,
         q_values,
     )
     max_value = jnp.max(optimistic_values)
@@ -1986,6 +2002,7 @@ def _count_keys(
     intrinsic: DqnIntrinsicConfig,
     num_actions: int,
 ) -> jax.Array:
+    observations = _count_observations_for_keys(observations, intrinsic)
     if intrinsic.action_conditioning == "none":
         return observations.astype(jnp.float32)
     if intrinsic.action_conditioning == "pair":
@@ -1999,6 +2016,32 @@ def _count_keys(
         (observations, jax.nn.one_hot(actions, num_actions, dtype=jnp.float32)),
         axis=-1,
     ).astype(jnp.float32)
+
+
+def _count_observations_for_keys(
+    observations: jax.Array,
+    intrinsic: DqnIntrinsicConfig,
+) -> jax.Array:
+    if not intrinsic.count_ignore_empty_room_distractor:
+        return observations
+    return _ignore_empty_room_symbolic_distractor(observations)
+
+
+def _ignore_empty_room_symbolic_distractor(observations: jax.Array) -> jax.Array:
+    feature_dim = observations.shape[-1]
+    if feature_dim % 3 != 0:
+        return observations
+    side = int(round(np.sqrt(feature_dim // 3)))
+    if side * side * 3 != feature_dim:
+        return observations
+
+    grid = observations.reshape((*observations.shape[:-1], side, side, 3))
+    is_normalized = jnp.max(jnp.abs(observations)) <= 1.0
+    wall_entity = jnp.where(is_normalized, 2.0 / 255.0, 2.0)
+    wall_colour = jnp.where(is_normalized, 5.0 / 255.0, 5.0)
+    wall_mask = jnp.isclose(grid[..., 0], wall_entity)
+    grid = grid.at[..., 1].set(jnp.where(wall_mask, wall_colour, grid[..., 1]))
+    return grid.reshape(observations.shape)
 
 
 def _count_key_dim(

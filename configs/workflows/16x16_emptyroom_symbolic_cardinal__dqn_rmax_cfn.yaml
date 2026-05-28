@@ -116,7 +116,8 @@ nodes:
     optimizer_momentum: 0
     optimizer_weight_decay: 0
     rmax_bonus_threshold: 0.5
-    rmax_v_max: 1
+    rmax_decision_v_max: 1
+    rmax_update_v_max: 1
     seed: 0
     target_update_frequency: 2048
     update_frequency: 1

@@ -4,6 +4,7 @@ import type {
   DatasetInspection,
   OfflineRndAnalysis,
   EnvironmentSessionSnapshot,
+  ExperimentResult,
   ExperimentSpec,
   JobInfo,
   SweepBuildRequest,
@@ -81,6 +82,7 @@ export const api = {
   jobs: () => request<JobInfo[]>("/jobs"),
   jobLogs: (jobId: string) => request<string>(`/jobs/${jobId}/logs`),
   experiments: () => request<Array<Record<string, unknown>>>("/experiments"),
+  experimentResults: () => request<ExperimentResult[]>("/experiments/results"),
   artifacts: (experimentId: string) => request<string[]>(`/artifacts/${experimentId}`),
   createEnvironmentSession: (payload: { component_id: string; config: Record<string, unknown>; seed: number }) =>
     request<EnvironmentSessionSnapshot>("/environment-sessions", {

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -28,6 +29,11 @@ class RunExperimentRequest(BaseModel):
 @router.get("", response_model=list[ExperimentRecord])
 def list_experiments(request: Request) -> list[ExperimentRecord]:
     return request.app.state.storage.list_experiments()
+
+
+@router.get("/results")
+def list_experiment_results(request: Request) -> list[dict[str, Any]]:
+    return [_experiment_result(record) for record in request.app.state.storage.list_experiments()]
 
 
 @router.get("/{experiment_id}", response_model=ExperimentRecord)
@@ -78,3 +84,55 @@ def _executor(request: Request, backend: str) -> LocalExecutor | SlurmExecutor:
     if backend == "slurm":
         return request.app.state.slurm_executor
     raise HTTPException(status_code=400, detail=f"Unsupported backend: {backend}")
+
+
+def _experiment_result(record: ExperimentRecord) -> dict[str, Any]:
+    run_dir = Path(record.run_dir)
+    workflow = record.workflow_spec or {}
+    metadata = workflow.get("metadata", {}) if isinstance(workflow, dict) else {}
+    return {
+        "experiment_id": record.experiment_id,
+        "status": record.status,
+        "run_dir": record.run_dir,
+        "workflow_name": (
+            workflow.get("name", record.experiment_id)
+            if isinstance(workflow, dict)
+            else record.experiment_id
+        ),
+        "sweep_id": metadata.get("sweep_id") if isinstance(metadata, dict) else None,
+        "sweep_trial_id": metadata.get("sweep_trial_id") if isinstance(metadata, dict) else None,
+        "sweep_parameters": metadata.get("sweep_parameters", {}) if isinstance(metadata, dict) else {},
+        "metrics": _read_json(run_dir / "metrics.json"),
+        "train_history": _read_jsonl(run_dir / "logs" / "train_history.jsonl"),
+        "eval_history": _read_jsonl(run_dir / "logs" / "eval_history.jsonl"),
+    }
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return rows
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows

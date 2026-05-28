@@ -14,10 +14,12 @@ from rlflow_builtin.dqn.training import (
     DqnAgentConfig,
     DqnIntrinsicConfig,
     DqnReplayConfig,
+    _count_keys,
     _count_raw_bonus,
     _initial_intrinsic_state,
     _make_dqn_environment,
     _observe_intrinsic_transition,
+    _q_loss,
     _rmax_action,
     run_dqn_training,
 )
@@ -374,7 +376,8 @@ def test_builtin_jax_runner_uses_dqn_rmax_with_count_bonus(tmp_path: Path) -> No
             "eval_epsilon": 0.0,
             "loss_type": "mse",
             "rmax_bonus_threshold": 0.5,
-            "rmax_v_max": 100.0,
+            "rmax_decision_v_max": 100.0,
+            "rmax_update_v_max": 100.0,
         },
     )
     for node in workflow.nodes:
@@ -470,6 +473,39 @@ def test_count_bonus_uses_exact_limited_table() -> None:
     assert bool(np.asarray(state.count_overflow)) is True
 
 
+def test_count_keys_can_ignore_empty_room_symbolic_distractor() -> None:
+    distractor_observation = _symbolic_navix_observation(1, 1, wall_colour=12)
+    other_distractor_observation = _symbolic_navix_observation(1, 1, wall_colour=42)
+    other_state_observation = _symbolic_navix_observation(1, 2, wall_colour=12)
+    observation_batch = np.stack(
+        [
+            distractor_observation,
+            other_distractor_observation,
+            other_state_observation,
+        ]
+    )
+    actions = jnp.asarray([0, 0, 0], dtype=jnp.int32)
+    exact_intrinsic = DqnIntrinsicConfig(
+        kind="count",
+        action_conditioning="input",
+        count_ignore_empty_room_distractor=False,
+    )
+    ignore_intrinsic = DqnIntrinsicConfig(
+        kind="count",
+        action_conditioning="input",
+        count_ignore_empty_room_distractor=True,
+    )
+
+    for observations_np in (observation_batch, observation_batch / 255.0):
+        observations = jnp.asarray(observations_np, dtype=jnp.float32)
+        exact_keys = _count_keys(observations, actions, exact_intrinsic, 4)
+        ignore_keys = _count_keys(observations, actions, ignore_intrinsic, 4)
+
+        assert not np.allclose(np.asarray(exact_keys[0]), np.asarray(exact_keys[1]))
+        np.testing.assert_allclose(np.asarray(ignore_keys[0]), np.asarray(ignore_keys[1]))
+        assert not np.allclose(np.asarray(ignore_keys[0]), np.asarray(ignore_keys[2]))
+
+
 def test_rmax_breaks_ties_randomly() -> None:
     agent = _minimal_dqn_agent(algorithm="dqn_rmax")
     intrinsic = DqnIntrinsicConfig(
@@ -505,6 +541,65 @@ def test_rmax_breaks_ties_randomly() -> None:
     }
 
     assert len(actions) > 1
+
+
+def test_rmax_uses_separate_decision_and_update_v_max() -> None:
+    agent = _minimal_dqn_agent(algorithm="dqn_rmax")
+    agent = DqnAgentConfig(
+        **{
+            **agent.__dict__,
+            "discount": 1.0,
+            "rmax_decision_v_max": 5.0,
+            "rmax_update_v_max": 7.0,
+        }
+    )
+    intrinsic = DqnIntrinsicConfig(
+        kind="count",
+        action_conditioning="input",
+        count_table_size=8,
+        count_bonus_exponent=1.0,
+        count_min_count=1.0,
+    )
+    state = _initial_intrinsic_state(
+        agent,
+        intrinsic,
+        input_dim=2,
+        num_actions=3,
+        key=jax.random.PRNGKey(0),
+    )
+    observation = jnp.asarray([1.0, 0.0], dtype=jnp.float32)
+    for action in (0, 2):
+        for _ in range(4):
+            state = _observe_intrinsic_transition(
+                state,
+                observation,
+                jnp.asarray(action, dtype=jnp.int32),
+                intrinsic,
+                3,
+            )
+
+    params = (
+        {
+            "w": jnp.zeros((2, 3), dtype=jnp.float32),
+            "b": jnp.asarray([0.0, 2.0, 3.0], dtype=jnp.float32),
+        },
+    )
+    action = _rmax_action(agent, params, state, intrinsic, observation, jax.random.PRNGKey(0), 3)
+    assert int(np.asarray(action)) == 1
+
+    loss = _q_loss(
+        agent,
+        params,
+        params,
+        observations=observation[None, :],
+        actions=jnp.asarray([0], dtype=jnp.int32),
+        rewards=jnp.asarray([0.0], dtype=jnp.float32),
+        next_observations=observation[None, :],
+        terminals=jnp.asarray([0.0], dtype=jnp.float32),
+        known_mask=jnp.asarray([True]),
+        next_unknown_any=jnp.asarray([True]),
+    )
+    np.testing.assert_allclose(np.asarray(loss), 49.0)
 
 
 def test_builtin_dqn_training_accepts_train_steps() -> None:
@@ -627,9 +722,21 @@ def _minimal_dqn_agent(algorithm: str = "dqn") -> DqnAgentConfig:
         obs_normalization_epsilon=1e-8,
         obs_normalization_clip=5.0,
         rmax_bonus_threshold=0.5,
-        rmax_v_max=100.0,
+        rmax_decision_v_max=100.0,
+        rmax_update_v_max=100.0,
         seed=0,
     )
+
+
+def _symbolic_navix_observation(row: int, col: int, *, size: int = 5, wall_colour: int) -> np.ndarray:
+    raw = np.zeros((size, size, 3), dtype=np.float32)
+    raw[..., 0] = 1
+    raw[0, :, :] = np.asarray([2, wall_colour, 0], dtype=np.float32)
+    raw[-1, :, :] = np.asarray([2, wall_colour, 0], dtype=np.float32)
+    raw[:, 0, :] = np.asarray([2, wall_colour, 0], dtype=np.float32)
+    raw[:, -1, :] = np.asarray([2, wall_colour, 0], dtype=np.float32)
+    raw[row, col, :] = np.asarray([10, 0, 0], dtype=np.float32)
+    return raw.reshape(-1).astype(np.float32)
 
 
 def _dqn_navix_workflow(

@@ -546,7 +546,8 @@ def _train_rnd(
         obs_normalization_epsilon=1e-8,
         obs_normalization_clip=5.0,
         rmax_bonus_threshold=0.5,
-        rmax_v_max=100.0,
+        rmax_decision_v_max=100.0,
+        rmax_update_v_max=100.0,
         seed=seed,
     )
     intrinsic = DqnIntrinsicConfig(
@@ -941,7 +942,8 @@ def _offline_agent_config(
         obs_normalization_epsilon=1e-8,
         obs_normalization_clip=5.0,
         rmax_bonus_threshold=0.5,
-        rmax_v_max=100.0,
+        rmax_decision_v_max=100.0,
+        rmax_update_v_max=100.0,
         seed=seed,
     )
 

@@ -455,6 +455,102 @@ button:disabled {
   font-size: 18px;
 }
 
+.experiment-results-page {
+  background: #f4f6f8;
+}
+
+.results-layout {
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) minmax(360px, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.results-panel {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+  background: #ffffff;
+  border: 1px solid #d9e0e8;
+  border-radius: 6px;
+  padding: 14px;
+}
+
+.results-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.results-controls .wide {
+  grid-column: span 2;
+}
+
+.compact-field {
+  min-width: min(420px, 48vw);
+}
+
+.result-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.result-heading h2 {
+  margin: 0;
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+
+.result-heading span {
+  color: #607085;
+  font-size: 12px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: 1px solid #bfd0dc;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: #f7fafb;
+  color: #33576b;
+  font-size: 12px;
+}
+
+.paper-strip div {
+  background: #fbfcfd;
+}
+
+.publication-plot {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.publication-plot svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid #e1e7ee;
+  background: #ffffff;
+}
+
+.plot-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.publication-table {
+  max-height: 360px;
+}
+
 .heatmap-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -764,12 +860,15 @@ button:disabled {
 
   .dataset-controls,
   .offline-controls,
+  .results-layout,
+  .results-controls,
   .sweep-layout,
   .sweep-controls {
     grid-template-columns: 1fr;
   }
 
   .offline-controls .wide,
+  .results-controls .wide,
   .sweep-controls .wide,
   .sweep-result {
     grid-column: auto;

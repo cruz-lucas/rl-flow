@@ -285,6 +285,26 @@ export interface SweepInspectRequest {
   metric_last_n?: number | null;
 }
 
+export interface ExperimentHistoryPoint {
+  episode: number;
+  return?: number | null;
+  length?: number | null;
+  loss?: number | null;
+}
+
+export interface ExperimentResult {
+  experiment_id: string;
+  status: string;
+  run_dir: string;
+  workflow_name: string;
+  sweep_id?: string | null;
+  sweep_trial_id?: string | null;
+  sweep_parameters: Record<string, unknown>;
+  metrics: Record<string, unknown>;
+  train_history: ExperimentHistoryPoint[];
+  eval_history: ExperimentHistoryPoint[];
+}
+
 export interface SweepTrialSummary {
   trial_id: string;
   experiment_id: string;

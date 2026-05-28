@@ -26,8 +26,11 @@ parameters:
   learning_rate:
     target: nodes.agent-1.config.learning_rate
     values: [0.001, 0.0003, 0.0001]
-  rmax_v_max:
-    target: nodes.agent-1.config.rmax_v_max
+  rmax_decision_v_max:
+    target: nodes.agent-1.config.rmax_decision_v_max
+    values: [1, 2, 5]
+  rmax_update_v_max:
+    target: nodes.agent-1.config.rmax_update_v_max
     values: [1, 2, 5]
   rmax_bonus_threshold:
     target: nodes.agent-1.config.rmax_bonus_threshold

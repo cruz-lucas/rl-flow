@@ -151,6 +151,13 @@ def test_api_run_creates_unique_runs_and_refreshes_job_status(monkeypatch, tmp_p
     assert states[first_job["job_id"]] == "succeeded"
     assert states[second_job["job_id"]] == "succeeded"
 
+    results = client.get("/experiments/results")
+    assert results.status_code == 200
+    result_rows = results.json()
+    first_result = next(row for row in result_rows if row["experiment_id"] == first_job["experiment_id"])
+    assert first_result["metrics"]["mean_train_return"] is not None
+    assert first_result["train_history"][0]["episode"] == 0
+
 
 def test_api_environment_session_steps_and_exports_pdf(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("RLFLOW_DB_PATH", str(tmp_path / "rlflow.db"))

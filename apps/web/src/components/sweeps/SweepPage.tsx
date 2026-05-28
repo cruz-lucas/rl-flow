@@ -1,8 +1,8 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Play, Plus, Search, SlidersHorizontal, Trophy, Wand2, X } from "lucide-react";
+import { Play, Plus, SlidersHorizontal, Wand2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/client";
-import type { SweepBuildRequest, SweepCandidate, SweepCompilation, SweepRunResponse, SweepSummary } from "../../types/schema";
+import type { SweepBuildRequest, SweepCandidate, SweepCompilation, SweepRunResponse } from "../../types/schema";
 
 type SelectedParameter = {
   target: string;
@@ -13,7 +13,6 @@ type SelectedParameter = {
 
 export function SweepPage() {
   const workflows = useQuery({ queryKey: ["workflow-gallery"], queryFn: api.workflowGallery });
-  const sweeps = useQuery({ queryKey: ["sweeps"], queryFn: api.sweeps });
   const [workflowId, setWorkflowId] = useState("");
   const [name, setName] = useState("");
   const [method, setMethod] = useState<"grid" | "random">("grid");
@@ -21,7 +20,6 @@ export function SweepPage() {
   const [metricGoal, setMetricGoal] = useState<"maximize" | "minimize">("maximize");
   const [metricLastN, setMetricLastN] = useState(50);
   const [backend, setBackend] = useState<"inherit" | "local" | "slurm">("inherit");
-  const [inspectPath, setInspectPath] = useState("");
   const [seedTarget, setSeedTarget] = useState("");
   const [seedStart, setSeedStart] = useState(0);
   const [seedCount, setSeedCount] = useState(3);
@@ -37,15 +35,6 @@ export function SweepPage() {
   });
   const compile = useMutation({ mutationFn: () => api.compileSweep(buildPayload()) });
   const run = useMutation({ mutationFn: () => api.runSweep(buildPayload()) });
-  const inspect = useMutation({
-    mutationFn: () =>
-      api.inspectSweep({
-        path: inspectPath,
-        metric_name: metricName,
-        metric_goal: metricGoal,
-        metric_last_n: metricName === "mean_train_return_last_n" ? metricLastN : null,
-      }),
-  });
 
   useEffect(() => {
     if (!workflowId && workflows.data?.[0]) {
@@ -64,12 +53,6 @@ export function SweepPage() {
       setSeedTarget(candidates.data.seed_candidates[0].target);
     }
   }, [candidates.data, seedTarget]);
-
-  useEffect(() => {
-    if (!inspectPath && sweeps.data?.[0]) {
-      setInspectPath(sweeps.data[0].path);
-    }
-  }, [inspectPath, sweeps.data]);
 
   const selectedTargets = useMemo(() => new Set(selected.map((item) => item.target)), [selected]);
   const result = run.data?.compilation ?? compile.data;
@@ -232,36 +215,9 @@ export function SweepPage() {
               </label>
             )}
           </div>
-          {(compile.error || run.error || candidates.error || inspect.error) && (
-            <div className="error-state">{(compile.error ?? run.error ?? candidates.error ?? inspect.error)?.message}</div>
+          {(compile.error || run.error || candidates.error) && (
+            <div className="error-state">{(compile.error ?? run.error ?? candidates.error)?.message}</div>
           )}
-        </section>
-
-        <section className="sweep-panel">
-          <div className="plot-header">
-            <div className="panel-title">Inspect Results</div>
-            <button onClick={() => inspect.mutate()} disabled={!inspectPath || inspect.isPending}>
-              <Search size={16} />
-              Inspect
-            </button>
-          </div>
-          <div className="sweep-controls">
-            <label className="field wide">
-              <span>recent sweep</span>
-              <select value={inspectPath} onChange={(event) => setInspectPath(event.target.value)}>
-                <option value="">Select</option>
-                {(sweeps.data ?? []).map((item) => (
-                  <option key={item.path} value={item.path}>
-                    {item.name} ({item.trial_count})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field wide">
-              <span>manifest or sweep dir</span>
-              <input value={inspectPath} onChange={(event) => setInspectPath(event.target.value)} />
-            </label>
-          </div>
         </section>
 
         <section className="sweep-panel">
@@ -322,146 +278,63 @@ export function SweepPage() {
           )}
         </section>
 
-        <SweepResult compilation={result} run={run.data} summary={inspect.data} />
+        <SweepResult compilation={result} run={run.data} />
       </div>
     </main>
   );
 }
 
-function SweepResult({ compilation, run, summary }: { compilation?: SweepCompilation; run?: SweepRunResponse; summary?: SweepSummary }) {
-  if (!compilation && !summary) return null;
+function SweepResult({ compilation, run }: { compilation?: SweepCompilation; run?: SweepRunResponse }) {
+  if (!compilation) return null;
   return (
     <section className="sweep-panel sweep-result">
       <div className="panel-title">Result</div>
       <div className="summary-strip">
-        {compilation && (
-          <>
-            <div>
-              <span>trials</span>
-              <strong>{compilation.trials.length}</strong>
-            </div>
-            <div>
-              <span>method</span>
-              <strong>{compilation.method}</strong>
-            </div>
-            <div>
-              <span>jobs</span>
-              <strong>{run?.jobs.length ?? 0}</strong>
-            </div>
-          </>
-        )}
-        {summary?.best && (
-          <>
-            <div>
-              <span>best config</span>
-              <strong>
-                <Trophy size={16} />
-                {summary.best.group_id}
-              </strong>
-            </div>
-            <div>
-              <span>mean {summary.metric}</span>
-              <strong>{formatMetric(summary.best.metric)}</strong>
-            </div>
-            <div>
-              <span>seeds</span>
-              <strong>{summary.best.metric_count}</strong>
-            </div>
-          </>
-        )}
+        <div>
+          <span>trials</span>
+          <strong>{compilation.trials.length}</strong>
+        </div>
+        <div>
+          <span>method</span>
+          <strong>{compilation.method}</strong>
+        </div>
+        <div>
+          <span>jobs</span>
+          <strong>{run?.jobs.length ?? 0}</strong>
+        </div>
       </div>
-      {compilation && (
-        <>
-          <dl className="sweep-paths">
-            <dt>sweep dir</dt>
-            <dd>{compilation.sweep_dir}</dd>
-            <dt>manifest</dt>
-            <dd>{compilation.manifest_path}</dd>
-            {compilation.slurm_array_path && (
-              <>
-                <dt>slurm</dt>
-                <dd>{compilation.slurm_array_path}</dd>
-              </>
-            )}
-          </dl>
-          <div className="table-scroll">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Trial</th>
-                  <th>Experiment</th>
-                  <th>Parameters</th>
-                </tr>
-              </thead>
-              <tbody>
-                {compilation.trials.slice(0, 100).map((trial) => (
-                  <tr key={trial.trial_id}>
-                    <td>{trial.trial_id}</td>
-                    <td>{trial.experiment_id}</td>
-                    <td>{JSON.stringify(trial.parameters)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-      {summary && (
-        <>
-          <div className="panel-title">Configurations</div>
-          <div className="table-scroll">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Rank</th>
-                  <th>Group</th>
-                  <th>Mean</th>
-                  <th>Min</th>
-                  <th>Max</th>
-                  <th>Seeds</th>
-                  <th>Parameters</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.groups.slice(0, 200).map((group, index) => (
-                  <tr key={group.group_id}>
-                    <td>{index + 1}</td>
-                    <td>{group.group_id}</td>
-                    <td>{formatMetric(group.metric_mean)}</td>
-                    <td>{formatMetric(group.metric_min)}</td>
-                    <td>{formatMetric(group.metric_max)}</td>
-                    <td>{group.metric_count}</td>
-                    <td>{JSON.stringify(group.parameters)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="panel-title">Trials</div>
-          <div className="table-scroll">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Trial</th>
-                  <th>Metric</th>
-                  <th>Parameters</th>
-                  <th>Run dir</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rankedTrials(summary).slice(0, 200).map((trial) => (
-                  <tr key={trial.trial_id}>
-                    <td>{trial.trial_id}</td>
-                    <td>{formatMetric(trial.metric)}</td>
-                    <td>{JSON.stringify(trial.parameters)}</td>
-                    <td>{trial.run_dir}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      <dl className="sweep-paths">
+        <dt>sweep dir</dt>
+        <dd>{compilation.sweep_dir}</dd>
+        <dt>manifest</dt>
+        <dd>{compilation.manifest_path}</dd>
+        {compilation.slurm_array_path && (
+          <>
+            <dt>slurm</dt>
+            <dd>{compilation.slurm_array_path}</dd>
+          </>
+        )}
+      </dl>
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Trial</th>
+              <th>Experiment</th>
+              <th>Parameters</th>
+            </tr>
+          </thead>
+          <tbody>
+            {compilation.trials.slice(0, 100).map((trial) => (
+              <tr key={trial.trial_id}>
+                <td>{trial.trial_id}</td>
+                <td>{trial.experiment_id}</td>
+                <td>{JSON.stringify(trial.parameters)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -499,23 +372,4 @@ function intValue(value: string, fallback: number): number {
 function formatCandidateValue(value: unknown): string {
   if (typeof value === "string") return value;
   return JSON.stringify(value) ?? String(value);
-}
-
-function rankedTrials(summary: SweepSummary) {
-  const direction = summary.goal === "minimize" ? 1 : -1;
-  return [...summary.trials].sort((left, right) => {
-    const leftMetric = typeof left.metric === "number" ? left.metric : null;
-    const rightMetric = typeof right.metric === "number" ? right.metric : null;
-    if (leftMetric === null && rightMetric === null) return left.trial_id.localeCompare(right.trial_id);
-    if (leftMetric === null) return 1;
-    if (rightMetric === null) return -1;
-    return direction * (leftMetric - rightMetric);
-  });
-}
-
-function formatMetric(value: unknown): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "";
-  if (Math.abs(value) >= 100 || Number.isInteger(value)) return value.toFixed(0);
-  if (Math.abs(value) >= 1) return value.toFixed(3);
-  return value.toPrecision(4);
 }

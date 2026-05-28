@@ -62,9 +62,9 @@ the coin-flip targets needed by the intrinsic reward update.
 uses the connected intrinsic module as an unknown detector instead of
 epsilon-greedy exploration. At action selection time, any action whose
 normalized intrinsic bonus is above `rmax_bonus_threshold` is assigned
-`rmax_v_max`. During replay updates, unknown current state-action pairs are
-masked out of the Q loss, and target bootstrapping uses `rmax_v_max` whenever
-the next observation has any unknown action. Count bonuses are maintained in a
+`rmax_decision_v_max`. During replay updates, unknown current state-action pairs
+are masked out of the Q loss, and target bootstrapping uses `rmax_update_v_max`
+whenever the next observation has any unknown action. Count bonuses are maintained in a
 JIT-friendly hashed table; use `count_action_conditioning: input` for
 state-action counts or `none` for state counts.
 

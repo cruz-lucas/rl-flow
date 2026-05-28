@@ -104,6 +104,7 @@ def intrinsic_reward_components() -> list[ComponentSpec]:
                     "count_table_overflow": {"type": "string", "enum": ["warn", "error"]},
                     "count_bonus_exponent": {"type": "number", "exclusiveMinimum": 0.0},
                     "count_min_count": {"type": "number", "exclusiveMinimum": 0.0},
+                    "count_ignore_empty_room_distractor": {"type": "boolean"},
                 }
             ),
             defaults={
@@ -114,6 +115,7 @@ def intrinsic_reward_components() -> list[ComponentSpec]:
                 "count_table_overflow": "warn",
                 "count_bonus_exponent": 0.5,
                 "count_min_count": 1.0,
+                "count_ignore_empty_room_distractor": False,
             },
         ),
     ]
@@ -203,7 +205,9 @@ def _dqn_rmax_properties() -> dict:
     properties = {
         **_dqn_properties(),
         "rmax_bonus_threshold": {"type": "number", "minimum": 0.0},
-        "rmax_v_max": {"type": "number"},
+        "rmax_decision_v_max": {"type": "number"},
+        "rmax_update_v_max": {"type": "number"},
+        "rmax_v_max": _hidden_property({"type": "number", "deprecated": True}),
     }
     for key in ("epsilon_start", "epsilon_end", "epsilon_decay_steps", "eval_epsilon"):
         properties[key] = _hidden_property(properties[key])
@@ -217,6 +221,8 @@ def _dqn_rmax_defaults() -> dict:
         "epsilon_end": 0.0,
         "eval_epsilon": 0.0,
         "rmax_bonus_threshold": 0.5,
+        "rmax_decision_v_max": 100.0,
+        "rmax_update_v_max": 100.0,
         "rmax_v_max": 100.0,
     }
 
