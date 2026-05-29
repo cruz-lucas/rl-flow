@@ -153,6 +153,20 @@ def test_sweep_summarize_averages_seed_replicates_by_configuration(tmp_path: Pat
     for trial, metric in zip(compilation.trials, metrics, strict=True):
         Path(trial.metrics_path).write_text(f'{{"mean_eval_return": {metric}}}', encoding="utf-8")
 
+    assert [trial.group_id for trial in compilation.trials] == [
+        "group-0000",
+        "group-0000",
+        "group-0001",
+        "group-0001",
+    ]
+    assert Path(compilation.trials[0].run_dir).parent == Path(compilation.trials[1].run_dir).parent
+    assert Path(compilation.trials[0].run_dir).name == "seed-0"
+    assert Path(compilation.trials[1].run_dir).name == "seed-1"
+    workflow = yaml.safe_load(Path(compilation.trials[0].workflow_path).read_text(encoding="utf-8"))
+    assert workflow["metadata"]["sweep_group_id"] == "group-0000"
+    assert workflow["metadata"]["sweep_group_parameters"] == {"lr": 0.01}
+    assert workflow["metadata"]["seed"] == 0
+
     summary = compiler.summarize(compilation.manifest_path)
 
     assert summary["best"]["parameters"] == {"lr": 0.01}
@@ -160,3 +174,95 @@ def test_sweep_summarize_averages_seed_replicates_by_configuration(tmp_path: Pat
     assert summary["best"]["metric_count"] == 2
     assert summary["groups"][1]["parameters"] == {"lr": 0.1}
     assert summary["groups"][1]["metric"] == 4.0
+
+
+def test_sweep_exports_bootstrap_learning_curves(tmp_path: Path) -> None:
+    spec = SweepSpec.model_validate(
+        {
+            "name": "curve sweep",
+            "sweep_id": "curve-sweep",
+            "workflow": {
+                "name": "curve workflow",
+                "nodes": [
+                    {
+                        "id": "env",
+                        "component": "builtin.env.riverswim",
+                        "position": {"x": 0, "y": 0},
+                        "config": {},
+                    },
+                    {
+                        "id": "agent",
+                        "component": "builtin.agent.q_learning_tabular",
+                        "position": {"x": 0, "y": 100},
+                        "config": {"learning_rate": 0.1, "discount": 0.99, "initial_q": 0.0},
+                    },
+                    {
+                        "id": "policy",
+                        "component": "builtin.policy.epsilon_greedy",
+                        "position": {"x": 0, "y": 200},
+                        "config": {"epsilon": 0.1, "eval_epsilon": 0.0},
+                    },
+                    {
+                        "id": "runner",
+                        "component": "builtin.runner.tabular_jax",
+                        "position": {"x": 300, "y": 100},
+                        "config": {
+                            "seed": 0,
+                            "train_episodes": 1,
+                            "max_episode_steps": 1,
+                            "eval_episodes": 0,
+                            "checkpoint_freq": None,
+                            "checkpoint_dir": "checkpoints",
+                            "save_final_checkpoint": False,
+                        },
+                    },
+                ],
+                "edges": [
+                    {"from_node": "env", "from_port": "environment", "to_node": "runner", "to_port": "environment"},
+                    {"from_node": "agent", "from_port": "agent", "to_node": "runner", "to_port": "agent"},
+                    {"from_node": "policy", "from_port": "policy", "to_node": "runner", "to_port": "policy"},
+                ],
+            },
+            "method": "grid",
+            "parameters": {
+                "lr": {
+                    "target": "nodes.agent.config.learning_rate",
+                    "values": [0.01],
+                },
+                "seed": {
+                    "target": "nodes.runner.config.seed",
+                    "values": [0, 1],
+                },
+            },
+        }
+    )
+    compiler = SweepCompiler(create_default_registry(discover=False))
+    compilation = compiler.compile(spec, out_dir=tmp_path)
+    histories = [
+        [1.0, 2.0, 3.0],
+        [2.0, 4.0, 6.0],
+    ]
+    for trial, returns in zip(compilation.trials, histories, strict=True):
+        history_path = Path(trial.run_dir) / "logs" / "train_history.jsonl"
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        history_path.write_text(
+            "\n".join(
+                f'{{"episode": {idx}, "discounted_return": {episode_return}, "return": 0.0, "length": 1, "loss": 0.0}}'
+                for idx, episode_return in enumerate(returns)
+            ),
+            encoding="utf-8",
+        )
+
+    export = compiler.export_learning_curves(
+        compilation.manifest_path,
+        out_dir=tmp_path / "curves",
+        bootstrap_samples=100,
+    )
+
+    csv_path = Path(export["csv_path"])
+    svg_path = Path(export["svg_path"])
+    assert csv_path.exists()
+    assert svg_path.exists()
+    csv_text = csv_path.read_text(encoding="utf-8")
+    assert "group-0000,0,1.5" in csv_text
+    assert export["groups"][0]["seed_count"] == 2

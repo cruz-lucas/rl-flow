@@ -31,6 +31,13 @@ export function ExperimentDetail() {
     () => results.data?.find((item) => item.experiment_id === experimentId) ?? results.data?.[0],
     [experimentId, results.data],
   );
+  const selectedRunGroup = useMemo(() => {
+    if (!selectedRun) return [];
+    if (!selectedRun.sweep_id || !selectedRun.sweep_group_id) return [selectedRun];
+    return (results.data ?? []).filter(
+      (item) => item.sweep_id === selectedRun.sweep_id && item.sweep_group_id === selectedRun.sweep_group_id,
+    );
+  }, [results.data, selectedRun]);
   const sweepSummary = useQuery({
     queryKey: ["sweep-summary", sweepPath, metricName, metricGoal, metricLastN],
     queryFn: () =>
@@ -72,7 +79,7 @@ export function ExperimentDetail() {
           {!selectedRun ? (
             <div className="empty-state">No run results</div>
           ) : (
-            <RunResults run={selectedRun} />
+            <RunResults run={selectedRun} groupRuns={selectedRunGroup} />
           )}
         </section>
 
@@ -126,10 +133,12 @@ export function ExperimentDetail() {
   );
 }
 
-function RunResults({ run }: { run: ExperimentResult }) {
-  const trainPoints = historyPoints(run.train_history, "return");
-  const lossPoints = historyPoints(run.train_history, "loss");
-  const evalPoints = historyPoints(run.eval_history, "return");
+function RunResults({ run, groupRuns }: { run: ExperimentResult; groupRuns: ExperimentResult[] }) {
+  const runs = groupRuns.length ? groupRuns : [run];
+  const trainPoints = aggregateHistoryPoints(runs.map((item) => historyPoints(item.train_history, "return")));
+  const lossPoints = aggregateHistoryPoints(runs.map((item) => historyPoints(item.train_history, "loss")));
+  const evalPoints = aggregateHistoryPoints(runs.map((item) => historyPoints(item.eval_history, "return")));
+  const isSeedGroup = runs.length > 1;
   return (
     <>
       <div className="result-heading">
@@ -145,11 +154,12 @@ function RunResults({ run }: { run: ExperimentResult }) {
           ["last 10", run.metrics.mean_train_return_last_10],
           ["mean eval", run.metrics.mean_eval_return],
           ["episodes", run.metrics.train_episodes],
+          ["seeds", isSeedGroup ? runs.length : null],
         ]}
       />
-      <LinePlot id="train-return-plot" title="Training Return" xLabel="Episode" yLabel="Return" points={trainPoints} />
-      {lossPoints.length > 0 && <LinePlot id="train-loss-plot" title="Training Loss" xLabel="Episode" yLabel="Loss" points={lossPoints} />}
-      {evalPoints.length > 0 && <LinePlot id="eval-return-plot" title="Evaluation Return" xLabel="Episode" yLabel="Return" points={evalPoints} />}
+      <LinePlot id="train-return-plot" title={isSeedGroup ? "Training Return Mean" : "Training Return"} xLabel="Episode" yLabel="Return" points={trainPoints} />
+      {lossPoints.length > 0 && <LinePlot id="train-loss-plot" title={isSeedGroup ? "Training Loss Mean" : "Training Loss"} xLabel="Episode" yLabel="Loss" points={lossPoints} />}
+      {evalPoints.length > 0 && <LinePlot id="eval-return-plot" title={isSeedGroup ? "Evaluation Return Mean" : "Evaluation Return"} xLabel="Episode" yLabel="Return" points={evalPoints} />}
     </>
   );
 }
@@ -384,6 +394,20 @@ function historyPoints(history: ExperimentHistoryPoint[], key: "return" | "loss"
   return history
     .map((point) => ({ x: Number(point.episode), y: numberValue(point[key]) }))
     .filter((point): point is { x: number; y: number } => Number.isFinite(point.x) && point.y !== null);
+}
+
+function aggregateHistoryPoints(seriesList: Array<Array<{ x: number; y: number }>>): Array<{ x: number; y: number }> {
+  const valuesByEpisode = new Map<number, number[]>();
+  for (const series of seriesList) {
+    for (const point of series) {
+      const values = valuesByEpisode.get(point.x) ?? [];
+      values.push(point.y);
+      valuesByEpisode.set(point.x, values);
+    }
+  }
+  return Array.from(valuesByEpisode.entries())
+    .sort(([left], [right]) => left - right)
+    .map(([x, values]) => ({ x, y: values.reduce((total, value) => total + value, 0) / values.length }));
 }
 
 function numberValue(value: unknown): number | null {

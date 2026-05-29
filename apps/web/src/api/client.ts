@@ -106,7 +106,7 @@ export const api = {
     }),
   trainOfflineRnd: (payload: {
     path: string;
-    algorithm: "rnd" | "cfn" | "classifier";
+    algorithm: "rnd" | "cfn" | "classifier" | "simhash";
     granularity: "state" | "state_action";
     epochs: number;
     batch_size: number;
@@ -124,6 +124,11 @@ export const api = {
     intrinsic_reward_center: boolean;
     max_grad_norm: number;
     seed: number;
+    simhash_mode?: "static" | "learned" | "autoencoder";
+    simhash_bits?: number;
+    simhash_table_size?: number;
+    simhash_bonus_exponent?: number;
+    simhash_min_count?: number;
   }) =>
     request<OfflineRndAnalysis>("/datasets/offline-rnd", {
       method: "POST",

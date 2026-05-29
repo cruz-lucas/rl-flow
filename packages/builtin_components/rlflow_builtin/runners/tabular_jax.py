@@ -241,11 +241,13 @@ def _write_dqn_outputs(
         result.train_returns,
         result.train_lengths,
         result.train_losses,
+        discounted_returns=result.train_discounted_returns,
     )
     _write_eval_history(
         logs_dir / "eval_history.jsonl",
         result.eval_returns,
         result.eval_lengths,
+        discounted_returns=result.eval_discounted_returns,
     )
 
     checkpoint_path = None
@@ -335,41 +337,42 @@ def _write_episode_history(
     returns: np.ndarray,
     lengths: np.ndarray,
     losses: np.ndarray,
+    discounted_returns: np.ndarray | None = None,
 ) -> None:
     with path.open("w", encoding="utf-8") as handle:
-        for idx, (episode_return, episode_length, loss) in enumerate(
-            zip(returns, lengths, losses, strict=True)
-        ):
+        for idx, (episode_return, episode_length, loss) in enumerate(zip(returns, lengths, losses, strict=True)):
+            row = {
+                "episode": idx,
+                "return": float(episode_return),
+                "length": int(episode_length),
+                "loss": float(loss),
+            }
+            if discounted_returns is not None:
+                row["discounted_return"] = float(discounted_returns[idx])
             handle.write(
-                json.dumps(
-                    {
-                        "episode": idx,
-                        "return": float(episode_return),
-                        "length": int(episode_length),
-                        "loss": float(loss),
-                    },
-                    sort_keys=True,
-                )
+                json.dumps(row, sort_keys=True)
                 + "\n"
             )
 
 
-def _write_eval_history(path: Path, returns: np.ndarray, lengths: np.ndarray) -> None:
+def _write_eval_history(
+    path: Path,
+    returns: np.ndarray,
+    lengths: np.ndarray,
+    discounted_returns: np.ndarray | None = None,
+) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for idx, (episode_return, episode_length) in enumerate(
             zip(returns, lengths, strict=True)
         ):
-            handle.write(
-                json.dumps(
-                    {
-                        "episode": idx,
-                        "return": float(episode_return),
-                        "length": int(episode_length),
-                    },
-                    sort_keys=True,
-                )
-                + "\n"
-            )
+            row = {
+                "episode": idx,
+                "return": float(episode_return),
+                "length": int(episode_length),
+            }
+            if discounted_returns is not None:
+                row["discounted_return"] = float(discounted_returns[idx])
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
 
 
 def _flatten_params(prefix: str, params: tuple[dict[str, jax.Array], ...]) -> dict[str, np.ndarray]:

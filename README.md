@@ -75,6 +75,8 @@ Sweeps are YAML files that point at a workflow and override node config paths. A
 uv run python -m rlflow.cli sweep compile configs/sweeps/navix_dqn_compute_canada.yaml --out runs/sweeps/navix-dqn
 ```
 
+When a sweep includes a seed parameter, seed trials for the same non-seed configuration are nested under one group directory, for example `trials/group-0000/seed-0` and `trials/group-0000/seed-1`. Summaries and result plots use that grouping to average seed replicates for the same workflow configuration.
+
 On a Compute Canada / Alliance login node, edit the sweep `account`, modules, and environment setup, then submit the array from that cluster checkout:
 
 ```bash

@@ -88,7 +88,7 @@ def offline_rnd_analysis(
     observations: np.ndarray,
     actions: np.ndarray,
     *,
-    algorithm: Literal["rnd", "cfn", "classifier"] = "rnd",
+    algorithm: Literal["rnd", "cfn", "classifier", "simhash"] = "rnd",
     granularity: Literal["state", "state_action"],
     epochs: int,
     batch_size: int,
@@ -106,6 +106,11 @@ def offline_rnd_analysis(
     intrinsic_reward_center: bool,
     max_grad_norm: float,
     seed: int,
+    simhash_mode: Literal["static", "learned", "autoencoder"] = "static",
+    simhash_bits: int = 32,
+    simhash_table_size: int = 16384,
+    simhash_bonus_exponent: float = 0.5,
+    simhash_min_count: float = 1.0,
     cfn_targets: np.ndarray | None = None,
 ) -> OfflineRndAnalysis:
     observation_features = _flatten_observations(observations)
@@ -203,6 +208,30 @@ def offline_rnd_analysis(
             activation=activation,
             optimizer=optimizer,
             action_conditioning=action_conditioning,
+            max_grad_norm=max_grad_norm,
+            num_actions=action_count,
+            seed=seed,
+        )
+    elif algorithm == "simhash":
+        learned_bonus, loss_history = _train_simhash(
+            observation_features,
+            action_values,
+            eval_observations,
+            eval_actions,
+            epochs=epochs,
+            batch_size=batch_size,
+            learning_rate=learning_rate,
+            hidden_units=hidden_units,
+            activation=activation,
+            optimizer=optimizer,
+            action_conditioning=action_conditioning,
+            update_period=update_period,
+            latent_dim=output_dim,
+            simhash_mode=simhash_mode,
+            simhash_bits=simhash_bits,
+            simhash_table_size=simhash_table_size,
+            simhash_bonus_exponent=simhash_bonus_exponent,
+            simhash_min_count=simhash_min_count,
             max_grad_norm=max_grad_norm,
             num_actions=action_count,
             seed=seed,
@@ -822,13 +851,16 @@ def _train_known_unknown_classifier(
     rng = np.random.default_rng(seed + 97)
     negative_observations = _negative_observation_samples(train_observations, rng)
     negative_actions = rng.integers(0, num_actions, size=train_actions.shape[0], dtype=np.int32)
+    # classifier_observations = train_observations
     classifier_observations = np.concatenate(
         (train_observations, negative_observations),
         axis=0,
     ).astype(np.float32)
+    # classifier_actions = train_actions
     classifier_actions = np.concatenate((train_actions, negative_actions), axis=0).astype(
         np.int32
     )
+    # labels = np.ones((train_observations.shape[0],), dtype=np.float32)
     labels = np.concatenate(
         (
             np.zeros((train_observations.shape[0],), dtype=np.float32),
@@ -900,6 +932,152 @@ def _train_known_unknown_classifier(
         loss_history.append(float(np.mean(epoch_losses)) if epoch_losses else 0.0)
 
     learned_bonus = np.asarray(jax.nn.sigmoid(logits(params, eval_observations_array, eval_actions_array)))
+    return learned_bonus.astype(np.float32), loss_history
+
+
+def _train_simhash(
+    train_observations: np.ndarray,
+    train_actions: np.ndarray,
+    eval_observations: np.ndarray,
+    eval_actions: np.ndarray,
+    *,
+    epochs: int,
+    batch_size: int,
+    learning_rate: float,
+    hidden_units: tuple[int, ...],
+    activation: str,
+    optimizer: str,
+    action_conditioning: str,
+    update_period: int,
+    latent_dim: int,
+    simhash_mode: Literal["static", "learned", "autoencoder"],
+    simhash_bits: int,
+    simhash_table_size: int,
+    simhash_bonus_exponent: float,
+    simhash_min_count: float,
+    max_grad_norm: float,
+    num_actions: int,
+    seed: int,
+) -> tuple[np.ndarray, list[float]]:
+    import jax
+    import jax.numpy as jnp
+
+    from rlflow_builtin.dqn.training import (
+        DqnIntrinsicConfig,
+        _canonicalize_action_conditioning,
+        _initial_intrinsic_state,
+        _observe_intrinsic_transition,
+        _optimizer,
+        _simhash_mode,
+        _simhash_raw_bonus,
+        _simhash_update,
+    )
+
+    train_observations_array = jnp.asarray(train_observations, dtype=jnp.float32)
+    train_actions_array = jnp.asarray(train_actions, dtype=jnp.int32)
+    eval_observations_array = jnp.asarray(eval_observations, dtype=jnp.float32)
+    eval_actions_array = jnp.asarray(eval_actions, dtype=jnp.int32)
+    input_dim = int(train_observations.shape[1])
+    key = jax.random.PRNGKey(seed)
+    key, intrinsic_key = jax.random.split(key)
+    agent = _offline_agent_config(
+        learning_rate=learning_rate,
+        hidden_units=hidden_units,
+        activation=activation,
+        optimizer=optimizer,
+        max_grad_norm=max_grad_norm,
+        seed=seed,
+    )
+    intrinsic = DqnIntrinsicConfig(
+        kind="simhash",
+        intrinsic_reward_scale=1.0,
+        intrinsic_stats_decay=1.0,
+        intrinsic_reward_epsilon=1e-4,
+        intrinsic_reward_clip=None,
+        intrinsic_reward_center=False,
+        hidden_units=hidden_units,
+        activation=activation,
+        output_dim=latent_dim,
+        optimizer=optimizer,
+        learning_rate=learning_rate,
+        action_conditioning=_canonicalize_action_conditioning(action_conditioning),
+        update_period=update_period,
+        simhash_mode=_simhash_mode(simhash_mode),
+        simhash_bits=int(simhash_bits),
+        simhash_table_size=int(simhash_table_size),
+        simhash_bonus_exponent=float(simhash_bonus_exponent),
+        simhash_min_count=float(simhash_min_count),
+    )
+    intrinsic_state = _initial_intrinsic_state(
+        agent,
+        intrinsic,
+        input_dim,
+        num_actions,
+        intrinsic_key,
+    )
+    intrinsic_optimizer = _optimizer(agent, intrinsic.learning_rate, intrinsic.optimizer)
+
+    @jax.jit
+    def update(state, batch, next_gradient_step):
+        _bonus, state, loss = _simhash_update(
+            state,
+            batch,
+            intrinsic,
+            intrinsic_optimizer,
+            num_actions,
+            next_gradient_step,
+        )
+        return state, loss
+
+    num_rows = int(train_observations.shape[0])
+    batch_size = max(1, min(int(batch_size), num_rows))
+    loss_history: list[float] = []
+    gradient_step = 0
+    if intrinsic.simhash_mode == "learned":
+        for _epoch in range(int(epochs)):
+            key, epoch_key = jax.random.split(key)
+            indices = np.asarray(jax.random.permutation(epoch_key, num_rows))
+            epoch_losses: list[float] = []
+            for start in range(0, num_rows, batch_size):
+                batch_indices = indices[start : start + batch_size]
+                batch = {
+                    "observations": train_observations_array[batch_indices],
+                    "actions": train_actions_array[batch_indices],
+                    "rewards": jnp.zeros((batch_indices.shape[0],), dtype=jnp.float32),
+                    "next_observations": train_observations_array[batch_indices],
+                    "terminals": jnp.zeros((batch_indices.shape[0],), dtype=jnp.float32),
+                }
+                gradient_step += 1
+                intrinsic_state, loss = update(
+                    intrinsic_state,
+                    batch,
+                    jnp.asarray(gradient_step, dtype=jnp.int32),
+                )
+                epoch_losses.append(float(loss))
+            loss_history.append(float(np.mean(epoch_losses)) if epoch_losses else 0.0)
+
+    for observation, action in zip(train_observations_array, train_actions_array, strict=True):
+        intrinsic_state = _observe_intrinsic_transition(
+            intrinsic_state,
+            observation,
+            action,
+            intrinsic,
+            num_actions,
+        )
+
+    @jax.jit
+    def evaluate(state, observations, actions):
+        return _simhash_raw_bonus(
+            state,
+            observations,
+            actions,
+            intrinsic,
+            num_actions,
+        )
+
+    learned_bonus = np.asarray(
+        evaluate(intrinsic_state, eval_observations_array, eval_actions_array)
+    )
     return learned_bonus.astype(np.float32), loss_history
 
 

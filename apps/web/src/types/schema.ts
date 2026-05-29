@@ -182,7 +182,7 @@ export interface OfflineRndPoint {
 
 export interface OfflineRndAnalysis {
   path: string;
-  algorithm: "rnd" | "cfn" | "classifier" | string;
+  algorithm: "rnd" | "cfn" | "classifier" | "simhash" | string;
   granularity: "state" | "state_action" | string;
   epochs: number;
   batch_size: number;
@@ -245,6 +245,9 @@ export interface SweepBuildRequest {
 export interface SweepTrial {
   index: number;
   trial_id: string;
+  group_id?: string | null;
+  group_run_dir?: string | null;
+  seed_value?: unknown | null;
   experiment_id: string;
   parameters: Record<string, unknown>;
   run_dir: string;
@@ -299,7 +302,11 @@ export interface ExperimentResult {
   workflow_name: string;
   sweep_id?: string | null;
   sweep_trial_id?: string | null;
+  sweep_group_id?: string | null;
+  sweep_group_run_dir?: string | null;
   sweep_parameters: Record<string, unknown>;
+  sweep_group_parameters?: Record<string, unknown>;
+  seed?: unknown | null;
   metrics: Record<string, unknown>;
   train_history: ExperimentHistoryPoint[];
   eval_history: ExperimentHistoryPoint[];

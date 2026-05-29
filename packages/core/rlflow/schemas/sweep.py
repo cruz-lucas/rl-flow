@@ -82,6 +82,9 @@ class SweepTrial(BaseModel):
 
     index: int
     trial_id: str
+    group_id: str | None = None
+    group_run_dir: str | None = None
+    seed_value: Any | None = None
     experiment_id: str
     parameters: dict[str, Any]
     run_dir: str

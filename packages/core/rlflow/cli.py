@@ -235,6 +235,32 @@ def sweep_summarize(
     typer.echo(yaml.safe_dump(summary, sort_keys=True))
 
 
+@sweep_app.command("export-learning-curves")
+def sweep_export_learning_curves(
+    path: Path,
+    out: Path | None = typer.Option(None, "--out"),
+    history: str = typer.Option("train", "--history", help="train or eval"),
+    value: str = typer.Option("discounted_return", "--value"),
+    bootstrap_samples: int = typer.Option(1000, "--bootstrap-samples", min=0),
+    seed: int = typer.Option(0, "--seed"),
+) -> None:
+    if path.is_dir():
+        path = path / "sweep_manifest.yaml"
+    try:
+        result = SweepCompiler(_registry()).export_learning_curves(
+            path,
+            out_dir=out,
+            history=history,
+            value=value,
+            bootstrap_samples=bootstrap_samples,
+            seed=seed,
+        )
+    except SweepCompilationError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(yaml.safe_dump(result, sort_keys=True))
+
+
 def _override_sweep_backend(spec: SweepSpec, backend: str | None) -> None:
     if backend is None:
         return

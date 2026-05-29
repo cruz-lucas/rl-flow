@@ -101,7 +101,15 @@ def _experiment_result(record: ExperimentRecord) -> dict[str, Any]:
         ),
         "sweep_id": metadata.get("sweep_id") if isinstance(metadata, dict) else None,
         "sweep_trial_id": metadata.get("sweep_trial_id") if isinstance(metadata, dict) else None,
+        "sweep_group_id": metadata.get("sweep_group_id") if isinstance(metadata, dict) else None,
+        "sweep_group_run_dir": metadata.get("sweep_group_run_dir") if isinstance(metadata, dict) else None,
         "sweep_parameters": metadata.get("sweep_parameters", {}) if isinstance(metadata, dict) else {},
+        "sweep_group_parameters": (
+            metadata.get("sweep_group_parameters", {})
+            if isinstance(metadata, dict)
+            else {}
+        ),
+        "seed": metadata.get("seed") if isinstance(metadata, dict) else None,
         "metrics": _read_json(run_dir / "metrics.json"),
         "train_history": _read_jsonl(run_dir / "logs" / "train_history.jsonl"),
         "eval_history": _read_jsonl(run_dir / "logs" / "eval_history.jsonl"),

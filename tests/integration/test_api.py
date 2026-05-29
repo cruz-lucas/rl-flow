@@ -313,7 +313,7 @@ def test_api_offline_rnd_analysis(monkeypatch, tmp_path) -> None:
     assert analysis["learned_state_action_bonus"][1][1][0] is not None
     assert abs(analysis["count_state_action_bonus"][1][1][0] - 1 / (2**0.5)) < 1e-7
 
-    for algorithm in ("cfn", "classifier"):
+    for algorithm in ("cfn", "classifier", "simhash"):
         response = client.post(
             "/datasets/offline-rnd",
             json={
@@ -326,6 +326,9 @@ def test_api_offline_rnd_analysis(monkeypatch, tmp_path) -> None:
                 "hidden_units": [8],
                 "output_dim": 4,
                 "seed": 0,
+                "simhash_mode": "learned",
+                "simhash_bits": 8,
+                "simhash_table_size": 32,
             },
         )
         assert response.status_code == 200

@@ -19,9 +19,10 @@ DQN_RMAX_AGENT_COMPONENT = "builtin.agent.dqn_rmax_jax"
 DQN_REPLAY_COMPONENTS = {"builtin.replay.uniform", "builtin.replay.dqn_uniform"}
 
 AgentAlgorithm = Literal["dqn", "dqn_rmax"]
-IntrinsicKind = Literal["none", "rnd", "cfn", "count"]
+IntrinsicKind = Literal["none", "rnd", "cfn", "count", "simhash"]
 ActionConditioning = Literal["none", "input", "output", "pair"]
 CountTableOverflow = Literal["warn", "error"]
+SimHashMode = Literal["static", "learned"]
 
 
 @dataclass(frozen=True)
@@ -92,6 +93,14 @@ class DqnIntrinsicConfig:
     count_bonus_exponent: float = 0.5
     count_min_count: float = 1.0
     count_ignore_empty_room_distractor: bool = False
+    simhash_mode: SimHashMode = "static"
+    simhash_bits: int = 32
+    simhash_table_size: int = 16384
+    simhash_table_overflow: CountTableOverflow = "warn"
+    simhash_bonus_exponent: float = 0.5
+    simhash_min_count: float = 1.0
+    simhash_update_period: int = 1
+    simhash_ignore_empty_room_distractor: bool = False
 
 
 @dataclass(frozen=True)
@@ -99,9 +108,11 @@ class DqnRunResult:
     params: tuple[dict[str, jax.Array], ...]
     aux_params: dict[str, tuple[dict[str, jax.Array], ...]]
     train_returns: np.ndarray
+    train_discounted_returns: np.ndarray | None
     train_lengths: np.ndarray
     train_losses: np.ndarray
     eval_returns: np.ndarray
+    eval_discounted_returns: np.ndarray | None
     eval_lengths: np.ndarray
     source_observation_shape: tuple[int, ...]
     source_observation_dtype: str
@@ -320,6 +331,36 @@ def dqn_intrinsic_config(
                 config.get("count_ignore_empty_room_distractor", False)
             ),
         )
+    if component_id == "builtin.intrinsic.simhash":
+        return DqnIntrinsicConfig(
+            kind="simhash",
+            intrinsic_reward_scale=float(config["intrinsic_reward_scale"]),
+            intrinsic_stats_decay=float(config["intrinsic_stats_decay"]),
+            intrinsic_reward_epsilon=float(config["intrinsic_reward_epsilon"]),
+            intrinsic_reward_clip=config["intrinsic_reward_clip"],
+            intrinsic_reward_center=bool(config["intrinsic_reward_center"]),
+            hidden_units=_hidden_units(config, "simhash", default=agent.hidden_units),
+            activation=str(config.get("simhash_activation") or agent.activation),
+            output_dim=int(config["simhash_latent_dim"]),
+            optimizer=str(config.get("simhash_optimizer") or agent.optimizer),
+            learning_rate=float(config.get("simhash_learning_rate") or agent.learning_rate),
+            action_conditioning=_canonicalize_action_conditioning(
+                config["simhash_action_conditioning"]
+            ),
+            update_period=int(config["simhash_update_period"]),
+            simhash_mode=_simhash_mode(config["simhash_mode"]),
+            simhash_bits=int(config["simhash_bits"]),
+            simhash_table_size=int(config["simhash_table_size"]),
+            simhash_table_overflow=_count_table_overflow_mode(
+                config.get("simhash_table_overflow", "warn")
+            ),
+            simhash_bonus_exponent=float(config["simhash_bonus_exponent"]),
+            simhash_min_count=float(config["simhash_min_count"]),
+            simhash_update_period=int(config["simhash_update_period"]),
+            simhash_ignore_empty_room_distractor=bool(
+                config.get("simhash_ignore_empty_room_distractor", False)
+            ),
+        )
     raise ValueError(f"Unsupported DQN intrinsic reward component: {component_id}")
 
 
@@ -433,18 +474,21 @@ def run_dqn_training(
             )
 
         _, eval_history = eval_scan(jax.random.PRNGKey(seed + 10000))
-        eval_returns, eval_lengths = eval_history
+        eval_returns, eval_discounted_returns, eval_lengths = eval_history
     else:
         eval_returns = jnp.asarray([], dtype=jnp.float32)
+        eval_discounted_returns = jnp.asarray([], dtype=jnp.float32)
         eval_lengths = jnp.asarray([], dtype=jnp.int32)
 
-    train_returns, train_lengths, train_losses = train_history
+    train_returns, train_discounted_returns, train_lengths, train_losses = train_history
     train_returns_np = np.asarray(train_returns)
+    train_discounted_returns_np = np.asarray(train_discounted_returns)
     train_lengths_np = np.asarray(train_lengths)
     train_losses_np = np.asarray(train_losses)
     if runner.train_steps is not None:
         episode_count = int(np.count_nonzero(train_lengths_np))
         train_returns_np = train_returns_np[:episode_count]
+        train_discounted_returns_np = train_discounted_returns_np[:episode_count]
         train_lengths_np = train_lengths_np[:episode_count]
         train_losses_np = train_losses_np[:episode_count]
     replay_arrays = (
@@ -461,9 +505,11 @@ def run_dqn_training(
         params=final_state.params,
         aux_params=_aux_params(final_state.intrinsic_state, intrinsic),
         train_returns=train_returns_np,
+        train_discounted_returns=train_discounted_returns_np,
         train_lengths=train_lengths_np,
         train_losses=train_losses_np,
         eval_returns=np.asarray(eval_returns),
+        eval_discounted_returns=np.asarray(eval_discounted_returns),
         eval_lengths=np.asarray(eval_lengths),
         source_observation_shape=dqn_env.observation_shape,
         source_observation_dtype=dqn_env.observation_dtype,
@@ -484,7 +530,7 @@ def _train_episode(
     q_optimizer: optax.GradientTransformation,
     intrinsic_optimizer: optax.GradientTransformation,
     max_episode_steps: int,
-) -> tuple[DqnTrainState, tuple[jax.Array, jax.Array, jax.Array]]:
+) -> tuple[DqnTrainState, tuple[jax.Array, jax.Array, jax.Array, jax.Array]]:
     key, reset_key = jax.random.split(state.key)
     env_state = dqn_env.reset(reset_key)
     source_observation = dqn_env.observation(env_state)
@@ -495,18 +541,40 @@ def _train_episode(
         observation,
         jnp.asarray(False),
         jnp.asarray(0.0, dtype=jnp.float32),
+        jnp.asarray(0.0, dtype=jnp.float32),
+        jnp.asarray(1.0, dtype=jnp.float32),
         jnp.asarray(0, dtype=jnp.int32),
         jnp.asarray(0.0, dtype=jnp.float32),
     )
 
     def step_fn(carry, _):
-        train_state, env_state, observation, done, episode_return, episode_length, loss_sum = carry
+        (
+            train_state,
+            env_state,
+            observation,
+            done,
+            episode_return,
+            discounted_return,
+            discount_power,
+            episode_length,
+            loss_sum,
+        ) = carry
 
         def inactive(active_carry):
             return active_carry, jnp.asarray(0.0, dtype=jnp.float32)
 
         def active(active_carry):
-            train_state, env_state, observation, _done, episode_return, episode_length, loss_sum = active_carry
+            (
+                train_state,
+                env_state,
+                observation,
+                _done,
+                episode_return,
+                discounted_return,
+                discount_power,
+                episode_length,
+                loss_sum,
+            ) = active_carry
             key, action_key, env_key, replay_key, update_key = jax.random.split(
                 train_state.key,
                 5,
@@ -585,6 +653,8 @@ def _train_episode(
                 next_observation,
                 terminal,
                 episode_return + reward,
+                discounted_return + discount_power * reward,
+                discount_power * agent.discount,
                 episode_length + 1,
                 loss_sum + step_loss,
             ), step_loss
@@ -597,9 +667,19 @@ def _train_episode(
         xs=None,
         length=max_episode_steps,
     )
-    state, _, _, _, episode_return, episode_length, loss_sum = step_carry
+    (
+        state,
+        _,
+        _,
+        _,
+        episode_return,
+        discounted_return,
+        _discount_power,
+        episode_length,
+        loss_sum,
+    ) = step_carry
     mean_loss = loss_sum / jnp.maximum(episode_length, 1)
-    return state, (episode_return, episode_length, mean_loss)
+    return state, (episode_return, discounted_return, episode_length, mean_loss)
 
 
 def _train_steps(
@@ -612,12 +692,13 @@ def _train_steps(
     intrinsic_optimizer: optax.GradientTransformation,
     max_episode_steps: int,
     train_steps: int,
-) -> tuple[DqnTrainState, tuple[jax.Array, jax.Array, jax.Array]]:
+) -> tuple[DqnTrainState, tuple[jax.Array, jax.Array, jax.Array, jax.Array]]:
     key, reset_key = jax.random.split(state.key)
     env_state = dqn_env.reset(reset_key)
     source_observation = dqn_env.observation(env_state)
     observation = dqn_env.encode(source_observation)
     train_returns = jnp.zeros((train_steps,), dtype=jnp.float32)
+    train_discounted_returns = jnp.zeros((train_steps,), dtype=jnp.float32)
     train_lengths = jnp.zeros((train_steps,), dtype=jnp.int32)
     train_losses = jnp.zeros((train_steps,), dtype=jnp.float32)
     step_carry = (
@@ -625,10 +706,13 @@ def _train_steps(
         env_state,
         observation,
         jnp.asarray(0.0, dtype=jnp.float32),
+        jnp.asarray(0.0, dtype=jnp.float32),
+        jnp.asarray(1.0, dtype=jnp.float32),
         jnp.asarray(0, dtype=jnp.int32),
         jnp.asarray(0.0, dtype=jnp.float32),
         jnp.asarray(0, dtype=jnp.int32),
         train_returns,
+        train_discounted_returns,
         train_lengths,
         train_losses,
     )
@@ -636,16 +720,19 @@ def _train_steps(
     def write_episode(
         episode_index: jax.Array,
         returns: jax.Array,
+        discounted_returns: jax.Array,
         lengths: jax.Array,
         losses: jax.Array,
         episode_return: jax.Array,
+        discounted_return: jax.Array,
         episode_length: jax.Array,
         loss_sum: jax.Array,
-    ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+    ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
         mean_loss = loss_sum / jnp.maximum(episode_length, 1)
         return (
             episode_index + 1,
             returns.at[episode_index].set(episode_return),
+            discounted_returns.at[episode_index].set(discounted_return),
             lengths.at[episode_index].set(episode_length),
             losses.at[episode_index].set(mean_loss),
         )
@@ -656,10 +743,13 @@ def _train_steps(
             env_state,
             observation,
             episode_return,
+            discounted_return,
+            discount_power,
             episode_length,
             loss_sum,
             episode_index,
             returns,
+            discounted_returns,
             lengths,
             losses,
         ) = carry
@@ -734,6 +824,8 @@ def _train_steps(
         )
         train_state = train_state._replace(global_step=train_state.global_step + 1)
         next_episode_return = episode_return + reward
+        next_discounted_return = discounted_return + discount_power * reward
+        next_discount_power = discount_power * agent.discount
         next_episode_length = episode_length + 1
         next_loss_sum = loss_sum + step_loss
         episode_done = jnp.logical_or(terminal, next_episode_length >= max_episode_steps)
@@ -744,20 +836,25 @@ def _train_steps(
                 _next_env_state,
                 _next_observation,
                 next_episode_return,
+                next_discounted_return,
+                _next_discount_power,
                 next_episode_length,
                 next_loss_sum,
                 episode_index,
                 returns,
+                discounted_returns,
                 lengths,
                 losses,
                 reset_key,
             ) = args
-            episode_index, returns, lengths, losses = write_episode(
+            episode_index, returns, discounted_returns, lengths, losses = write_episode(
                 episode_index,
                 returns,
+                discounted_returns,
                 lengths,
                 losses,
                 next_episode_return,
+                next_discounted_return,
                 next_episode_length,
                 next_loss_sum,
             )
@@ -769,10 +866,13 @@ def _train_steps(
                 reset_env_state,
                 reset_observation,
                 jnp.asarray(0.0, dtype=jnp.float32),
+                jnp.asarray(0.0, dtype=jnp.float32),
+                jnp.asarray(1.0, dtype=jnp.float32),
                 jnp.asarray(0, dtype=jnp.int32),
                 jnp.asarray(0.0, dtype=jnp.float32),
                 episode_index,
                 returns,
+                discounted_returns,
                 lengths,
                 losses,
             )
@@ -783,10 +883,13 @@ def _train_steps(
                 next_env_state,
                 next_observation,
                 next_episode_return,
+                next_discounted_return,
+                next_discount_power,
                 next_episode_length,
                 next_loss_sum,
                 episode_index,
                 returns,
+                discounted_returns,
                 lengths,
                 losses,
                 _reset_key,
@@ -796,10 +899,13 @@ def _train_steps(
                 next_env_state,
                 next_observation,
                 next_episode_return,
+                next_discounted_return,
+                next_discount_power,
                 next_episode_length,
                 next_loss_sum,
                 episode_index,
                 returns,
+                discounted_returns,
                 lengths,
                 losses,
             )
@@ -814,10 +920,13 @@ def _train_steps(
                     next_env_state,
                     next_observation,
                     next_episode_return,
+                    next_discounted_return,
+                    next_discount_power,
                     next_episode_length,
                     next_loss_sum,
                     episode_index,
                     returns,
+                    discounted_returns,
                     lengths,
                     losses,
                     reset_key,
@@ -837,36 +946,41 @@ def _train_steps(
         _env_state,
         _observation,
         episode_return,
+        discounted_return,
+        _discount_power,
         episode_length,
         loss_sum,
         episode_index,
         returns,
+        discounted_returns,
         lengths,
         losses,
     ) = step_carry
 
     def write_partial(args):
-        episode_index, returns, lengths, losses = write_episode(
+        episode_index, returns, discounted_returns, lengths, losses = write_episode(
             args[0],
             args[1],
             args[2],
             args[3],
+            args[4],
             episode_return,
+            discounted_return,
             episode_length,
             loss_sum,
         )
-        return episode_index, returns, lengths, losses
+        return episode_index, returns, discounted_returns, lengths, losses
 
     def skip_partial(args):
         return args
 
-    _episode_index, returns, lengths, losses = jax.lax.cond(
+    _episode_index, returns, discounted_returns, lengths, losses = jax.lax.cond(
         episode_length > 0,
         write_partial,
         skip_partial,
-        (episode_index, returns, lengths, losses),
+        (episode_index, returns, discounted_returns, lengths, losses),
     )
-    return state, (returns, lengths, losses)
+    return state, (returns, discounted_returns, lengths, losses)
 
 
 def _replay_updates(
@@ -996,6 +1110,15 @@ def _intrinsic_update(
         )
     if intrinsic.kind == "cfn":
         return _cfn_update(
+            state,
+            batch,
+            intrinsic,
+            intrinsic_optimizer,
+            num_actions,
+            next_gradient_step,
+        )
+    if intrinsic.kind == "simhash":
+        return _simhash_update(
             state,
             batch,
             intrinsic,
@@ -1213,6 +1336,77 @@ def _count_update(
     )
 
 
+def _simhash_update(
+    state: DqnIntrinsicState,
+    batch: dict[str, jax.Array],
+    intrinsic: DqnIntrinsicConfig,
+    intrinsic_optimizer: optax.GradientTransformation,
+    num_actions: int,
+    next_gradient_step: jax.Array,
+) -> tuple[jax.Array, DqnIntrinsicState, jax.Array]:
+    raw_bonus = _simhash_raw_bonus(
+        state,
+        batch["observations"],
+        batch["actions"],
+        intrinsic,
+        num_actions,
+    )
+    predictor_params = state.predictor_params
+    opt_state = state.opt_state
+    intrinsic_loss = jnp.asarray(0.0, dtype=jnp.float32)
+
+    if intrinsic.simhash_mode == "learned":
+        intrinsic_input = _simhash_input(
+            batch["observations"],
+            batch["actions"],
+            intrinsic,
+            num_actions,
+        )
+
+        def loss_fn(autoencoder_params):
+            reconstruction = _apply_mlp(autoencoder_params, intrinsic_input, intrinsic.activation)
+            return jnp.mean(jnp.square(reconstruction - intrinsic_input))
+
+        def do_autoencoder_update(args):
+            autoencoder_params, current_opt_state = args
+            loss, grads = jax.value_and_grad(loss_fn)(autoencoder_params)
+            updates, current_opt_state = intrinsic_optimizer.update(
+                grads,
+                current_opt_state,
+                autoencoder_params,
+            )
+            autoencoder_params = optax.apply_updates(autoencoder_params, updates)
+            return autoencoder_params, current_opt_state, loss
+
+        def skip_autoencoder_update(args):
+            autoencoder_params, current_opt_state = args
+            return autoencoder_params, current_opt_state, loss_fn(autoencoder_params)
+
+        predictor_params, opt_state, intrinsic_loss = jax.lax.cond(
+            next_gradient_step % intrinsic.update_period == 0,
+            do_autoencoder_update,
+            skip_autoencoder_update,
+            (state.predictor_params, state.opt_state),
+        )
+
+    reward_mean, reward_var = _update_intrinsic_stats(
+        intrinsic,
+        state.reward_mean,
+        state.reward_var,
+        jax.lax.stop_gradient(raw_bonus),
+    )
+    return (
+        raw_bonus,
+        state._replace(
+            predictor_params=predictor_params,
+            opt_state=opt_state,
+            reward_mean=reward_mean,
+            reward_var=reward_var,
+        ),
+        intrinsic_loss,
+    )
+
+
 def _eval_episode(
     key: jax.Array,
     params: tuple[dict[str, jax.Array], ...],
@@ -1221,7 +1415,7 @@ def _eval_episode(
     agent: DqnAgentConfig,
     intrinsic: DqnIntrinsicConfig,
     max_episode_steps: int,
-) -> tuple[jax.Array, tuple[jax.Array, jax.Array]]:
+) -> tuple[jax.Array, tuple[jax.Array, jax.Array, jax.Array]]:
     key, reset_key = jax.random.split(key)
     env_state = dqn_env.reset(reset_key)
     observation = dqn_env.encode(dqn_env.observation(env_state))
@@ -1231,17 +1425,19 @@ def _eval_episode(
         observation,
         jnp.asarray(False),
         jnp.asarray(0.0, dtype=jnp.float32),
+        jnp.asarray(0.0, dtype=jnp.float32),
+        jnp.asarray(1.0, dtype=jnp.float32),
         jnp.asarray(0, dtype=jnp.int32),
     )
 
     def step_fn(carry, _):
-        key, env_state, observation, done, episode_return, episode_length = carry
+        key, env_state, observation, done, episode_return, discounted_return, discount_power, episode_length = carry
 
         def inactive(active_carry):
             return active_carry, None
 
         def active(active_carry):
-            key, env_state, observation, _done, episode_return, episode_length = active_carry
+            key, env_state, observation, _done, episode_return, discounted_return, discount_power, episode_length = active_carry
             key, action_key, env_key = jax.random.split(key, 3)
             action = _select_action(
                 agent,
@@ -1264,6 +1460,8 @@ def _eval_episode(
                 next_observation,
                 terminal,
                 episode_return + reward,
+                discounted_return + discount_power * reward,
+                discount_power * agent.discount,
                 episode_length + 1,
             ), None
 
@@ -1275,8 +1473,8 @@ def _eval_episode(
         xs=None,
         length=max_episode_steps,
     )
-    key, _, _, _, episode_return, episode_length = step_carry
-    return key, (episode_return, episode_length)
+    key, _, _, _, episode_return, discounted_return, _discount_power, episode_length = step_carry
+    return key, (episode_return, discounted_return, episode_length)
 
 
 def _make_dqn_environment(
@@ -1440,6 +1638,36 @@ def _initial_intrinsic_state(
         target_input_dim = 1
         target_output_dim = 1
         hidden_units: tuple[int, ...] = ()
+        target_params = _init_mlp(target_key, target_input_dim, hidden_units, target_output_dim)
+        prior_params = _init_mlp(prior_key, target_input_dim, hidden_units, target_output_dim)
+        predictor_params = _init_mlp(
+            predictor_key,
+            target_input_dim,
+            hidden_units,
+            target_output_dim,
+        )
+    elif intrinsic.kind == "simhash":
+        target_input_dim = _conditioned_input_dim(
+            input_dim,
+            num_actions,
+            intrinsic.action_conditioning,
+        )
+        projection_input_dim = (
+            intrinsic.output_dim
+            if intrinsic.simhash_mode == "learned"
+            else target_input_dim
+        )
+        target_params = _init_mlp(target_key, projection_input_dim, (), intrinsic.simhash_bits)
+        prior_params = _init_mlp(prior_key, 1, (), 1)
+        if intrinsic.simhash_mode == "learned":
+            predictor_params = _init_autoencoder(
+                predictor_key,
+                target_input_dim,
+                intrinsic.hidden_units,
+                intrinsic.output_dim,
+            )
+        else:
+            predictor_params = _init_mlp(predictor_key, 1, (), 1)
     else:
         target_input_dim = _conditioned_input_dim(
             input_dim,
@@ -1452,21 +1680,17 @@ def _initial_intrinsic_state(
             intrinsic.action_conditioning,
         )
         hidden_units = intrinsic.hidden_units
-    target_params = _init_mlp(target_key, target_input_dim, hidden_units, target_output_dim)
-    prior_params = _init_mlp(prior_key, target_input_dim, hidden_units, target_output_dim)
-    predictor_params = _init_mlp(
-        predictor_key,
-        target_input_dim,
-        hidden_units,
-        target_output_dim,
-    )
+        target_params = _init_mlp(target_key, target_input_dim, hidden_units, target_output_dim)
+        prior_params = _init_mlp(prior_key, target_input_dim, hidden_units, target_output_dim)
+        predictor_params = _init_mlp(
+            predictor_key,
+            target_input_dim,
+            hidden_units,
+            target_output_dim,
+        )
     optimizer = _optimizer(agent, intrinsic.learning_rate, intrinsic.optimizer)
-    count_table_size = intrinsic.count_table_size if intrinsic.kind == "count" else 1
-    count_key_dim = (
-        _count_key_dim(input_dim, num_actions, intrinsic.action_conditioning)
-        if intrinsic.kind == "count"
-        else 1
-    )
+    count_table_size = _intrinsic_count_table_size(intrinsic)
+    count_key_dim = _intrinsic_count_key_dim(input_dim, num_actions, intrinsic)
     return DqnIntrinsicState(
         target_params=target_params,
         prior_params=prior_params,
@@ -1535,6 +1759,27 @@ def _init_mlp(
     return tuple(params)
 
 
+def _init_autoencoder(
+    key: jax.Array,
+    input_dim: int,
+    hidden_units: tuple[int, ...],
+    latent_dim: int,
+) -> tuple[dict[str, jax.Array], ...]:
+    decoder_units = tuple(reversed(hidden_units))
+    dims = (input_dim, *hidden_units, latent_dim, *decoder_units, input_dim)
+    keys = jax.random.split(key, len(dims) - 1)
+    params = []
+    for layer_key, in_dim, out_dim in zip(keys, dims[:-1], dims[1:], strict=True):
+        scale = jnp.sqrt(2.0 / float(max(in_dim, 1)))
+        params.append(
+            {
+                "w": jax.random.normal(layer_key, (in_dim, out_dim), dtype=jnp.float32) * scale,
+                "b": jnp.zeros((out_dim,), dtype=jnp.float32),
+            }
+        )
+    return tuple(params)
+
+
 def _apply_mlp(
     params: tuple[dict[str, jax.Array], ...],
     observations: jax.Array,
@@ -1545,6 +1790,22 @@ def _apply_mlp(
         x = _activation(x @ layer["w"] + layer["b"], activation)
     output = params[-1]
     return x @ output["w"] + output["b"]
+
+
+def _apply_autoencoder_encoder(
+    params: tuple[dict[str, jax.Array], ...],
+    observations: jax.Array,
+    hidden_units: tuple[int, ...],
+    activation: str = "relu",
+) -> jax.Array:
+    x = jnp.asarray(observations, dtype=jnp.float32)
+    latent_layer_index = len(hidden_units)
+    for index, layer in enumerate(params):
+        x = x @ layer["w"] + layer["b"]
+        if index == latent_layer_index:
+            return x
+        x = _activation(x, activation)
+    return x
 
 
 def _q_loss(
@@ -1704,8 +1965,8 @@ def _normalize_intrinsic_reward(
     if intrinsic.intrinsic_reward_clip is not None:
         normalized = jnp.clip(normalized, 0.0, intrinsic.intrinsic_reward_clip)
     # TODO: expose option of keeping negative rewards or shifting them to be non-negative
-    else:
-        normalized = normalized - jnp.minimum(jnp.min(normalized), 0.0)
+    # else:
+    #     normalized = normalized - jnp.minimum(jnp.min(normalized), 0.0)
     return normalized
 
 
@@ -1908,8 +2169,15 @@ def _intrinsic_bonus(
             intrinsic,
             num_actions,
         )
+    elif intrinsic.kind == "simhash":
+        return _simhash_raw_bonus(
+            state,
+            observations,
+            actions,
+            intrinsic,
+            num_actions,
+        )
     else:
-        # TODO: Implement flag to control normalization. count-based rewards I'm not normalizing rn.
         return _count_raw_bonus(
             state,
             observations,
@@ -1932,9 +2200,10 @@ def _observe_intrinsic_transition(
     intrinsic: DqnIntrinsicConfig,
     num_actions: int,
 ) -> DqnIntrinsicState:
-    if intrinsic.kind != "count":
+    if intrinsic.kind not in {"count", "simhash"}:
         return state
-    key = _count_keys(
+    key = _intrinsic_count_keys(
+        state,
         observation[None, :],
         action.reshape((1,)),
         intrinsic,
@@ -1974,6 +2243,20 @@ def _count_raw_bonus(
     counts = jnp.where(found, state.counts[indices], 0.0)
     effective_counts = jnp.maximum(counts, intrinsic.count_min_count)
     return 1.0 / (effective_counts**intrinsic.count_bonus_exponent)
+
+
+def _simhash_raw_bonus(
+    state: DqnIntrinsicState,
+    observations: jax.Array,
+    actions: jax.Array,
+    intrinsic: DqnIntrinsicConfig,
+    num_actions: int,
+) -> jax.Array:
+    keys = _simhash_keys(state, observations, actions, intrinsic, num_actions)
+    indices, found = _count_lookup(state, keys)
+    counts = jnp.where(found, state.counts[indices], 0.0)
+    effective_counts = jnp.maximum(counts, intrinsic.simhash_min_count)
+    return 1.0 / (effective_counts**intrinsic.simhash_bonus_exponent)
 
 
 def _count_lookup(
@@ -2018,11 +2301,66 @@ def _count_keys(
     ).astype(jnp.float32)
 
 
+def _intrinsic_count_keys(
+    state: DqnIntrinsicState,
+    observations: jax.Array,
+    actions: jax.Array,
+    intrinsic: DqnIntrinsicConfig,
+    num_actions: int,
+) -> jax.Array:
+    if intrinsic.kind == "simhash":
+        return _simhash_keys(state, observations, actions, intrinsic, num_actions)
+    return _count_keys(observations, actions, intrinsic, num_actions)
+
+
+def _simhash_keys(
+    state: DqnIntrinsicState,
+    observations: jax.Array,
+    actions: jax.Array,
+    intrinsic: DqnIntrinsicConfig,
+    num_actions: int,
+) -> jax.Array:
+    simhash_input = _simhash_input(observations, actions, intrinsic, num_actions)
+    if intrinsic.simhash_mode == "learned":
+        simhash_input = _apply_autoencoder_encoder(
+            state.predictor_params,
+            simhash_input,
+            intrinsic.hidden_units,
+            intrinsic.activation,
+        )
+    projections = _apply_mlp(state.target_params, simhash_input, "linear")
+    return (projections >= 0.0).astype(jnp.float32)
+
+
+def _simhash_input(
+    observations: jax.Array,
+    actions: jax.Array,
+    intrinsic: DqnIntrinsicConfig,
+    num_actions: int,
+) -> jax.Array:
+    observations = _simhash_observations_for_keys(observations, intrinsic)
+    return _conditioned_input(
+        observations,
+        actions,
+        intrinsic.action_conditioning,
+        num_actions,
+    ).astype(jnp.float32)
+
+
 def _count_observations_for_keys(
     observations: jax.Array,
     intrinsic: DqnIntrinsicConfig,
 ) -> jax.Array:
     if not intrinsic.count_ignore_empty_room_distractor:
+        return observations
+    return _ignore_empty_room_symbolic_distractor(observations)
+
+
+def _simhash_observations_for_keys(
+    observations: jax.Array,
+    intrinsic: DqnIntrinsicConfig,
+) -> jax.Array:
+    if not intrinsic.simhash_ignore_empty_room_distractor:
         return observations
     return _ignore_empty_room_symbolic_distractor(observations)
 
@@ -2054,6 +2392,26 @@ def _count_key_dim(
     if mode == "pair":
         return input_dim * num_actions
     return input_dim + num_actions
+
+
+def _intrinsic_count_table_size(intrinsic: DqnIntrinsicConfig) -> int:
+    if intrinsic.kind == "count":
+        return intrinsic.count_table_size
+    if intrinsic.kind == "simhash":
+        return intrinsic.simhash_table_size
+    return 1
+
+
+def _intrinsic_count_key_dim(
+    input_dim: int,
+    num_actions: int,
+    intrinsic: DqnIntrinsicConfig,
+) -> int:
+    if intrinsic.kind == "count":
+        return _count_key_dim(input_dim, num_actions, intrinsic.action_conditioning)
+    if intrinsic.kind == "simhash":
+        return intrinsic.simhash_bits
+    return 1
 
 
 def _td_loss(td_error: jax.Array, loss_type: str, huber_delta: float) -> jax.Array:
@@ -2138,6 +2496,8 @@ def _hidden_units(
         return default or ()
     if isinstance(hidden_units, int):
         return (int(hidden_units),)
+    if isinstance(hidden_units, str):
+        return tuple(int(dim.strip()) for dim in hidden_units.split(",") if dim.strip())
     return tuple(int(dim) for dim in hidden_units)
 
 
@@ -2189,11 +2549,20 @@ def _count_table_overflow_mode(mode: str) -> CountTableOverflow:
     return normalized  # type: ignore[return-value]
 
 
+def _simhash_mode(mode: str) -> SimHashMode:
+    normalized = str(mode).strip().lower()
+    if normalized == "autoencoder":
+        normalized = "learned"
+    if normalized not in {"static", "learned"}:
+        raise ValueError("simhash_mode must be 'static' or 'learned'")
+    return normalized  # type: ignore[return-value]
+
+
 def _count_table_status(
     state: DqnIntrinsicState,
     intrinsic: DqnIntrinsicConfig,
 ) -> tuple[int | None, bool | None]:
-    if intrinsic.kind != "count":
+    if intrinsic.kind not in {"count", "simhash"}:
         return None, None
     return (
         int(np.asarray(jax.device_get(state.count_size))),
@@ -2205,14 +2574,25 @@ def _handle_count_table_overflow(
     intrinsic: DqnIntrinsicConfig,
     overflow: bool | None,
 ) -> None:
-    if intrinsic.kind != "count" or not overflow:
+    if intrinsic.kind not in {"count", "simhash"} or not overflow:
         return
-    message = (
-        "Exact count table exceeded count_table_size="
-        f"{intrinsic.count_table_size}; additional novel count keys were not inserted. "
-        "Increase count_table_size or set count_table_overflow='error' to fail runs."
+    table_name = "simhash_table_size" if intrinsic.kind == "simhash" else "count_table_size"
+    table_size = (
+        intrinsic.simhash_table_size
+        if intrinsic.kind == "simhash"
+        else intrinsic.count_table_size
     )
-    if intrinsic.count_table_overflow == "error":
+    overflow_mode = (
+        intrinsic.simhash_table_overflow
+        if intrinsic.kind == "simhash"
+        else intrinsic.count_table_overflow
+    )
+    message = (
+        f"Count table exceeded {table_name}={table_size}; additional novel "
+        f"count keys were not inserted. Increase {table_name} or set the "
+        "table_overflow option to 'error' to fail runs."
+    )
+    if overflow_mode == "error":
         raise RuntimeError(message)
     warnings.warn(message, RuntimeWarning, stacklevel=2)
 
@@ -2263,6 +2643,11 @@ def _aux_params(
             "cfn_prior": state.prior_params,
             "cfn_predictor": state.predictor_params,
         }
+    if intrinsic.kind == "simhash":
+        params = {"simhash_projection": state.target_params}
+        if intrinsic.simhash_mode == "learned":
+            params["simhash_autoencoder"] = state.predictor_params
+        return params
     return {}
 
 

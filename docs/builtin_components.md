@@ -13,6 +13,7 @@ Current builtin components:
 - `builtin.intrinsic.rnd`
 - `builtin.intrinsic.cfn`
 - `builtin.intrinsic.count`
+- `builtin.intrinsic.simhash`
 - `builtin.policy.epsilon_greedy`
 - `builtin.policy.ucb`
 - `builtin.policy.softmax`
@@ -49,7 +50,8 @@ For value learning on Navix vector, symbolic, RGB, or scalar tabular
 observations, connect `builtin.agent.dqn_jax` to `builtin.runner.tabular_jax`
 with a `builtin.replay.uniform` replay buffer. Optional exploration bonuses are
 separate intrinsic reward modules: connect `builtin.intrinsic.rnd`,
-`builtin.intrinsic.cfn`, or `builtin.intrinsic.count` to the runner's
+`builtin.intrinsic.cfn`, `builtin.intrinsic.count`, or
+`builtin.intrinsic.simhash` to the runner's
 `intrinsic_reward` port. The DQN path uses JAX scans over fixed-length episodes
 and replay updates, with scalar tabular observations converted to one-hot
 vectors before entering the network. Set `normalize_observations: true` to
@@ -67,6 +69,18 @@ are masked out of the Q loss, and target bootstrapping uses `rmax_update_v_max`
 whenever the next observation has any unknown action. Count bonuses are maintained in a
 JIT-friendly hashed table; use `count_action_conditioning: input` for
 state-action counts or `none` for state counts.
+
+`builtin.intrinsic.simhash` implements the SimHash count bonus from
+count-based exploration for deep RL. Set `simhash_mode: static` to hash the
+conditioned observation with a fixed random projection, or `simhash_mode:
+learned` to train an autoencoder and hash its latent representation. Use
+`simhash_hidden_units` to set the learned autoencoder shape, for example
+`"256,256"` or `[256, 256]`.
+
+DQN train and eval histories include `discounted_return`. For sweep plots, run
+`rlflow sweep export-learning-curves <sweep_manifest.yaml>` to write a CSV and
+SVG with seed-averaged discounted-return curves and bootstrapped 95% confidence
+bands.
 
 The tabular replay buffer can also act as a scalar-transition dataset bridge:
 

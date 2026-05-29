@@ -5,10 +5,11 @@ import { api } from "../../api/client";
 import { ActionHeatmap, BonusScatter, StateHeatmap } from "./Heatmaps";
 
 type Granularity = "state" | "state_action";
-type OfflineAlgorithm = "rnd" | "cfn" | "classifier";
+type OfflineAlgorithm = "rnd" | "cfn" | "classifier" | "simhash";
 type Activation = "relu" | "tanh" | "gelu" | "elu" | "linear";
 type Optimizer = "adam" | "sgd" | "rmsprop";
 type ActionConditioning = "none" | "input" | "output" | "pair";
+type SimHashMode = "static" | "learned";
 
 export function OfflineRlPage() {
   const datasets = useQuery({ queryKey: ["datasets"], queryFn: api.datasets });
@@ -31,6 +32,11 @@ export function OfflineRlPage() {
   const [intrinsicRewardCenter, setIntrinsicRewardCenter] = useState(false);
   const [maxGradNorm, setMaxGradNorm] = useState(1);
   const [seed, setSeed] = useState(0);
+  const [simhashMode, setSimhashMode] = useState<SimHashMode>("static");
+  const [simhashBits, setSimhashBits] = useState(32);
+  const [simhashTableSize, setSimhashTableSize] = useState(16384);
+  const [simhashBonusExponent, setSimhashBonusExponent] = useState(0.5);
+  const [simhashMinCount, setSimhashMinCount] = useState(1);
   const analysis = useMutation({
     mutationFn: () =>
       api.trainOfflineRnd({
@@ -53,6 +59,11 @@ export function OfflineRlPage() {
         intrinsic_reward_center: intrinsicRewardCenter,
         max_grad_norm: maxGradNorm,
         seed,
+        simhash_mode: simhashMode,
+        simhash_bits: simhashBits,
+        simhash_table_size: simhashTableSize,
+        simhash_bonus_exponent: simhashBonusExponent,
+        simhash_min_count: simhashMinCount,
       }),
   });
 
@@ -101,6 +112,7 @@ export function OfflineRlPage() {
             <option value="rnd">RND</option>
             <option value="cfn">CFN</option>
             <option value="classifier">Known/Unknown Classifier</option>
+            <option value="simhash">SimHash</option>
           </select>
         </label>
         <label className="field">
@@ -261,6 +273,58 @@ export function OfflineRlPage() {
             onChange={(event) => setSeed(Number.parseInt(event.target.value, 10) || 0)}
           />
         </label>
+        {algorithm === "simhash" && (
+          <>
+            <label className="field">
+              <span>simhash mode</span>
+              <select value={simhashMode} onChange={(event) => setSimhashMode(event.target.value as SimHashMode)}>
+                <option value="static">static</option>
+                <option value="learned">learned</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>simhash bits</span>
+              <input
+                type="number"
+                min={1}
+                max={4096}
+                step={1}
+                value={simhashBits}
+                onChange={(event) => setSimhashBits(Number.parseInt(event.target.value, 10) || 1)}
+              />
+            </label>
+            <label className="field">
+              <span>hash table size</span>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={simhashTableSize}
+                onChange={(event) => setSimhashTableSize(Number.parseInt(event.target.value, 10) || 1)}
+              />
+            </label>
+            <label className="field">
+              <span>bonus exponent</span>
+              <input
+                type="number"
+                min={0.000001}
+                step="any"
+                value={simhashBonusExponent}
+                onChange={(event) => setSimhashBonusExponent(Number(event.target.value) || 0.5)}
+              />
+            </label>
+            <label className="field">
+              <span>min count</span>
+              <input
+                type="number"
+                min={0.000001}
+                step="any"
+                value={simhashMinCount}
+                onChange={(event) => setSimhashMinCount(Number(event.target.value) || 1)}
+              />
+            </label>
+          </>
+        )}
       </div>
       {analysis.error && <div className="error-state">{analysis.error.message}</div>}
       {result && (
@@ -345,6 +409,7 @@ const algorithmLabels: Record<string, string> = {
   rnd: "RND",
   cfn: "CFN",
   classifier: "Known/Unknown Classifier",
+  simhash: "SimHash",
 };
 
 function formatMetric(value: number | undefined): string {

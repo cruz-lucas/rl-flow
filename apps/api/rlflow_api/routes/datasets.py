@@ -61,7 +61,7 @@ class DatasetInspection(BaseModel):
 
 class OfflineRndRequest(BaseModel):
     path: str
-    algorithm: Literal["rnd", "cfn", "classifier"] = "rnd"
+    algorithm: Literal["rnd", "cfn", "classifier", "simhash"] = "rnd"
     granularity: Literal["state", "state_action"] = "state"
     epochs: int = Field(default=50, ge=1, le=2000)
     batch_size: int = Field(default=128, ge=1, le=8192)
@@ -79,6 +79,11 @@ class OfflineRndRequest(BaseModel):
     intrinsic_reward_center: bool = False
     max_grad_norm: float = Field(default=1.0, ge=0.0)
     seed: int = Field(default=0, ge=0)
+    simhash_mode: Literal["static", "learned", "autoencoder"] = "static"
+    simhash_bits: int = Field(default=32, ge=1, le=4096)
+    simhash_table_size: int = Field(default=16384, ge=1, le=1_000_000)
+    simhash_bonus_exponent: float = Field(default=0.5, gt=0.0)
+    simhash_min_count: float = Field(default=1.0, gt=0.0)
 
 
 class OfflineRndPoint(BaseModel):
@@ -215,6 +220,11 @@ def train_offline_rnd(payload: OfflineRndRequest, request: Request) -> OfflineRn
             intrinsic_reward_center=payload.intrinsic_reward_center,
             max_grad_norm=payload.max_grad_norm,
             seed=payload.seed,
+            simhash_mode=payload.simhash_mode,
+            simhash_bits=payload.simhash_bits,
+            simhash_table_size=payload.simhash_table_size,
+            simhash_bonus_exponent=payload.simhash_bonus_exponent,
+            simhash_min_count=payload.simhash_min_count,
             cfn_targets=np.asarray(data["cfn_targets"]) if "cfn_targets" in data.files else None,
         )
     except ValueError as exc:

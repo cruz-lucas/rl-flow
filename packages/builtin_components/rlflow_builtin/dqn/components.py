@@ -118,16 +118,54 @@ def intrinsic_reward_components() -> list[ComponentSpec]:
                 "count_ignore_empty_room_distractor": False,
             },
         ),
+        ComponentSpec(
+            id="builtin.intrinsic.simhash",
+            source="builtin",
+            kind="intrinsic_reward",
+            display_name="SimHash Intrinsic Reward",
+            description=(
+                "SimHash count-based exploration bonus with static random "
+                "projections or learned autoencoder features."
+            ),
+            output_ports=output,
+            config_schema=component_schema(
+                {
+                    **_common_intrinsic_properties("simhash"),
+                    "simhash_mode": {
+                        "type": "string",
+                        "enum": ["static", "learned", "autoencoder"],
+                    },
+                    "simhash_action_conditioning": _action_conditioning_schema(),
+                    "simhash_bits": {"type": "integer", "minimum": 1},
+                    "simhash_latent_dim": {"type": "integer", "minimum": 1},
+                    "simhash_table_size": {"type": "integer", "minimum": 1},
+                    "simhash_table_overflow": {"type": "string", "enum": ["warn", "error"]},
+                    "simhash_bonus_exponent": {"type": "number", "exclusiveMinimum": 0.0},
+                    "simhash_min_count": {"type": "number", "exclusiveMinimum": 0.0},
+                    "simhash_update_period": {"type": "integer", "minimum": 1},
+                    "simhash_ignore_empty_room_distractor": {"type": "boolean"},
+                }
+            ),
+            defaults={
+                **_common_intrinsic_defaults("simhash"),
+                "intrinsic_stats_decay": 1.0,
+                "simhash_mode": "static",
+                "simhash_action_conditioning": "input",
+                "simhash_bits": 32,
+                "simhash_latent_dim": 64,
+                "simhash_table_size": 16384,
+                "simhash_table_overflow": "warn",
+                "simhash_bonus_exponent": 0.5,
+                "simhash_min_count": 1.0,
+                "simhash_update_period": 1,
+                "simhash_ignore_empty_room_distractor": False,
+            },
+        ),
     ]
 
 
 def _dqn_properties() -> dict:
-    hidden_schema = {
-        "oneOf": [
-            {"type": "integer", "minimum": 1},
-            {"type": "array", "items": {"type": "integer", "minimum": 1}},
-        ]
-    }
+    hidden_schema = _hidden_units_schema(allow_null=False)
     optional_hidden_schema = {
         "oneOf": [
             {"type": "null"},
@@ -234,7 +272,7 @@ def _common_intrinsic_properties(prefix: str) -> dict:
         "intrinsic_reward_epsilon": {"type": "number", "exclusiveMinimum": 0.0},
         "intrinsic_reward_clip": {"type": ["number", "null"], "exclusiveMinimum": 0.0},
         "intrinsic_reward_center": {"type": "boolean"},
-        f"{prefix}_hidden_units": {"type": ["integer", "null"], "minimum": 1},
+        f"{prefix}_hidden_units": _hidden_units_schema(allow_null=True),
         f"{prefix}_hidden_dims": _hidden_property(
             {
                 "oneOf": [
@@ -296,3 +334,14 @@ def _action_conditioning_schema() -> dict:
 
 def _hidden_property(schema: dict) -> dict:
     return {**schema, "deprecated": True, "x-inspector-hidden": True}
+
+
+def _hidden_units_schema(*, allow_null: bool) -> dict:
+    options = [
+        {"type": "integer", "minimum": 1},
+        {"type": "array", "items": {"type": "integer", "minimum": 1}},
+        {"type": "string", "pattern": r"^\s*\d+(\s*,\s*\d+)*\s*$"},
+    ]
+    if allow_null:
+        options.insert(0, {"type": "null"})
+    return {"oneOf": options}

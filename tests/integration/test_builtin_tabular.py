@@ -21,6 +21,7 @@ from rlflow_builtin.dqn.training import (
     _observe_intrinsic_transition,
     _q_loss,
     _rmax_action,
+    _simhash_raw_bonus,
     run_dqn_training,
 )
 from rlflow_builtin.tabular.types import RunnerConfig
@@ -471,6 +472,66 @@ def test_count_bonus_uses_exact_limited_table() -> None:
     )
     assert int(np.asarray(state.count_size)) == 2
     assert bool(np.asarray(state.count_overflow)) is True
+
+
+def test_simhash_bonus_uses_static_hash_counts() -> None:
+    agent = _minimal_dqn_agent()
+    intrinsic = DqnIntrinsicConfig(
+        kind="simhash",
+        action_conditioning="input",
+        simhash_mode="static",
+        simhash_bits=8,
+        simhash_table_size=4,
+        simhash_bonus_exponent=0.5,
+        simhash_min_count=1.0,
+    )
+    state = _initial_intrinsic_state(
+        agent,
+        intrinsic,
+        input_dim=2,
+        num_actions=2,
+        key=jax.random.PRNGKey(0),
+    )
+    observation = jnp.asarray([1.0, 0.0], dtype=jnp.float32)
+    state = _observe_intrinsic_transition(state, observation, jnp.asarray(0), intrinsic, 2)
+    state = _observe_intrinsic_transition(state, observation, jnp.asarray(0), intrinsic, 2)
+
+    bonuses = _simhash_raw_bonus(
+        state,
+        jnp.stack([observation, observation]),
+        jnp.asarray([0, 1], dtype=jnp.int32),
+        intrinsic,
+        2,
+    )
+
+    assert int(np.asarray(state.count_size)) == 1
+    np.testing.assert_allclose(float(np.asarray(bonuses[0])), 1.0 / np.sqrt(2.0), rtol=1e-6)
+    assert float(np.asarray(bonuses[1])) >= 1.0 / np.sqrt(2.0)
+
+
+def test_simhash_learned_initializes_autoencoder_features() -> None:
+    agent = _minimal_dqn_agent()
+    intrinsic = DqnIntrinsicConfig(
+        kind="simhash",
+        hidden_units=(4,),
+        action_conditioning="input",
+        simhash_mode="learned",
+        simhash_bits=6,
+        output_dim=3,
+        simhash_table_size=4,
+    )
+    state = _initial_intrinsic_state(
+        agent,
+        intrinsic,
+        input_dim=2,
+        num_actions=2,
+        key=jax.random.PRNGKey(0),
+    )
+    observation = jnp.asarray([1.0, 0.0], dtype=jnp.float32)
+    state = _observe_intrinsic_transition(state, observation, jnp.asarray(0), intrinsic, 2)
+
+    assert state.target_params[0]["w"].shape == (3, 6)
+    assert int(np.asarray(state.count_size)) == 1
 
 
 def test_count_keys_can_ignore_empty_room_symbolic_distractor() -> None:

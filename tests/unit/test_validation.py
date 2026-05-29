@@ -70,6 +70,19 @@ def test_validation_catches_config_errors() -> None:
     assert any(error.code == "invalid_config" for error in result.errors)
 
 
+def test_validation_accepts_string_hidden_units() -> None:
+    workflow = valid_workflow()
+    workflow.nodes[1].config = {
+        "learning_rate": 0.001,
+        "discount": 0.99,
+        "hidden_units": "256,256",
+    }
+
+    result = validator().validate(workflow)
+
+    assert result.valid
+
+
 def test_validation_requires_intrinsic_for_dqn_rmax() -> None:
     workflow = valid_workflow()
     workflow.nodes[1].component = "builtin.agent.dqn_rmax_jax"
