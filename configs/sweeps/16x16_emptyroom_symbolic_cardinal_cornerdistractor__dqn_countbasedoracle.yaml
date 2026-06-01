@@ -30,7 +30,7 @@ parameters:
     target: nodes.replay_buffer-3.config.batch_size
     values: [32, 64, 128, 256]
   buffer_size:
-    target: nodes.replay_buffer-3.config.buffer_size
+    target: nodes.replay_buffer-3.config.capacity
     values: [10000, 50000, 100000]
   target_update_freq:
     target: nodes.agent-1.config.target_update_freq
