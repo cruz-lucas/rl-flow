@@ -15,6 +15,7 @@ from rlflow_builtin.dqn.training import (
     DqnIntrinsicConfig,
     DqnReplayConfig,
     _count_keys,
+    _count_direct_bonus,
     _count_raw_bonus,
     _initial_intrinsic_state,
     _make_dqn_environment,
@@ -362,6 +363,26 @@ def test_builtin_dqn_navix_symbolic_encoder_respects_normalize_observations() ->
     assert np.isclose(float(normalized_encoded.max()), 10.0 / 255.0)
 
 
+def test_builtin_dqn_navix_exposes_oracle_tabular_state_ids() -> None:
+    env = _make_dqn_environment(
+        "navix.env.grid",
+        {
+            "env_name": "empty_room",
+            "size": 5,
+            "layout": "fixed",
+            "observation_mode": "symbolic",
+            "action_set": "cardinal",
+            "max_steps": 20,
+            "symbolic_distractor": "corner_wall_color",
+        },
+    )
+    timestep = env.reset(jax.random.PRNGKey(0))
+
+    assert env.oracle_state_id is not None
+    assert env.oracle_state_space_size == 9
+    assert int(np.asarray(env.oracle_state_id(timestep))) == 0
+
+
 def test_builtin_jax_runner_uses_dqn_rmax_with_count_bonus(tmp_path: Path) -> None:
     workflow = _dqn_navix_workflow(
         observation_mode="tabular",
@@ -402,7 +423,8 @@ def test_builtin_jax_runner_uses_dqn_rmax_with_count_bonus(tmp_path: Path) -> No
                     "intrinsic_reward_clip": 10.0,
                     "intrinsic_reward_center": False,
                     "count_action_conditioning": "input",
-                    "count_table_size": 256,
+                    "count_key_mode": "oracle_tabular",
+                    "count_table_size": 0,
                     "count_bonus_exponent": 0.5,
                     "count_min_count": 1.0,
                 },
@@ -428,6 +450,8 @@ def test_builtin_jax_runner_uses_dqn_rmax_with_count_bonus(tmp_path: Path) -> No
     assert metrics["agent"] == "builtin.agent.dqn_rmax_jax"
     assert metrics["agent_algorithm"] == "dqn_rmax"
     assert metrics["intrinsic_reward"] == "builtin.intrinsic.count"
+    assert metrics["count_table_entries"] is not None
+    assert metrics["count_table_overflow"] is False
     assert metrics["mean_eval_return"] is not None
 
 
@@ -461,7 +485,11 @@ def test_count_bonus_uses_exact_limited_table() -> None:
         intrinsic,
         2,
     )
-    np.testing.assert_allclose(np.asarray(bonuses), np.asarray([1.0 / np.sqrt(2.0), 1.0]), rtol=1e-6)
+    np.testing.assert_allclose(
+        np.asarray(bonuses),
+        np.asarray([1.0 / np.sqrt(2.0), 1.0]),
+        rtol=1e-6,
+    )
 
     state = _observe_intrinsic_transition(
         state,
@@ -472,6 +500,63 @@ def test_count_bonus_uses_exact_limited_table() -> None:
     )
     assert int(np.asarray(state.count_size)) == 2
     assert bool(np.asarray(state.count_overflow)) is True
+
+
+def test_oracle_tabular_count_uses_direct_state_action_indices() -> None:
+    agent = _minimal_dqn_agent(algorithm="dqn_rmax")
+    intrinsic = DqnIntrinsicConfig(
+        kind="count",
+        action_conditioning="input",
+        count_key_mode="oracle_tabular",
+        count_table_size=0,
+        count_bonus_exponent=0.5,
+        count_min_count=1.0,
+    )
+    state = _initial_intrinsic_state(
+        agent,
+        intrinsic,
+        input_dim=75,
+        num_actions=4,
+        key=jax.random.PRNGKey(0),
+        oracle_state_space_size=9,
+    )
+    observation = jnp.zeros((75,), dtype=jnp.float32)
+    state_id = jnp.asarray(4, dtype=jnp.int32)
+
+    state = _observe_intrinsic_transition(
+        state,
+        observation,
+        jnp.asarray(2),
+        intrinsic,
+        4,
+        state_id=state_id,
+    )
+    state = _observe_intrinsic_transition(
+        state,
+        observation,
+        jnp.asarray(2),
+        intrinsic,
+        4,
+        state_id=state_id,
+    )
+
+    assert state.counts.shape == (36,)
+    assert state.count_keys.shape == (36, 1)
+    assert int(np.asarray(state.count_size)) == 0
+    assert float(np.asarray(state.counts[4 * 4 + 2])) == 2.0
+
+    bonuses = _count_direct_bonus(
+        state,
+        jnp.asarray([4, 4], dtype=jnp.int32),
+        jnp.asarray([2, 1], dtype=jnp.int32),
+        intrinsic,
+        4,
+    )
+    np.testing.assert_allclose(
+        np.asarray(bonuses),
+        np.asarray([1.0 / np.sqrt(2.0), 1.0]),
+        rtol=1e-6,
+    )
 
 
 def test_simhash_bonus_uses_static_hash_counts() -> None:

@@ -7,12 +7,110 @@ from rlflow.registry.builtin import create_default_registry
 from rlflow.schemas.sweep import SweepSpec
 
 
+def _dqn_workflow() -> dict:
+    return {
+        "name": "dqn workflow",
+        "nodes": [
+            {
+                "id": "env",
+                "component": "navix.env.grid",
+                "position": {"x": 0, "y": 0},
+                "config": {
+                    "env_name": "empty_room",
+                    "size": 16,
+                    "layout": "fixed",
+                    "observation_mode": "symbolic",
+                    "action_set": "cardinal",
+                    "max_steps": 100,
+                },
+            },
+            {
+                "id": "agent",
+                "component": "builtin.agent.dqn_jax",
+                "position": {"x": 0, "y": 100},
+                "config": {"learning_rate": 0.001},
+            },
+            {
+                "id": "replay",
+                "component": "builtin.replay.uniform",
+                "position": {"x": 0, "y": 200},
+                "config": {"batch_size": 32},
+            },
+            {
+                "id": "runner",
+                "component": "builtin.runner.tabular_jax",
+                "position": {"x": 300, "y": 100},
+                "config": {
+                    "seed": 0,
+                    "train_episodes": 1,
+                    "train_steps": 10,
+                    "max_episode_steps": 10,
+                    "eval_episodes": 0,
+                    "checkpoint_freq": None,
+                    "checkpoint_dir": "checkpoints",
+                    "save_final_checkpoint": False,
+                },
+            },
+        ],
+        "edges": [
+            {"from_node": "env", "from_port": "environment", "to_node": "runner", "to_port": "environment"},
+            {"from_node": "agent", "from_port": "agent", "to_node": "runner", "to_port": "agent"},
+            {"from_node": "replay", "from_port": "replay_buffer", "to_node": "runner", "to_port": "replay_buffer"},
+        ],
+    }
+
+
+def _tabular_workflow() -> dict:
+    return {
+        "name": "tabular workflow",
+        "nodes": [
+            {
+                "id": "env",
+                "component": "builtin.env.riverswim",
+                "position": {"x": 0, "y": 0},
+                "config": {},
+            },
+            {
+                "id": "agent",
+                "component": "builtin.agent.q_learning_tabular",
+                "position": {"x": 0, "y": 100},
+                "config": {"learning_rate": 0.1, "discount": 0.99, "initial_q": 0.0},
+            },
+            {
+                "id": "policy",
+                "component": "builtin.policy.epsilon_greedy",
+                "position": {"x": 0, "y": 200},
+                "config": {"epsilon": 0.1, "eval_epsilon": 0.0},
+            },
+            {
+                "id": "runner",
+                "component": "builtin.runner.tabular_jax",
+                "position": {"x": 300, "y": 100},
+                "config": {
+                    "seed": 0,
+                    "train_episodes": 1,
+                    "max_episode_steps": 1,
+                    "eval_episodes": 0,
+                    "checkpoint_freq": None,
+                    "checkpoint_dir": "checkpoints",
+                    "save_final_checkpoint": False,
+                },
+            },
+        ],
+        "edges": [
+            {"from_node": "env", "from_port": "environment", "to_node": "runner", "to_port": "environment"},
+            {"from_node": "agent", "from_port": "agent", "to_node": "runner", "to_port": "agent"},
+            {"from_node": "policy", "from_port": "policy", "to_node": "runner", "to_port": "policy"},
+        ],
+    }
+
+
 def test_sweep_compiler_writes_trial_workflows_and_slurm_array(tmp_path: Path) -> None:
     spec = SweepSpec.model_validate(
         {
             "name": "navix sweep",
             "sweep_id": "test-sweep",
-            "workflow": "configs/workflows/navix_dqn_empty_room.yaml",
+            "workflow": _dqn_workflow(),
             "method": "grid",
             "metric": {"name": "mean_eval_return", "goal": "maximize"},
             "execution": {
@@ -63,7 +161,7 @@ def test_sweep_summarize_selects_best_metric(tmp_path: Path) -> None:
         {
             "name": "summary sweep",
             "sweep_id": "summary-sweep",
-            "workflow": "configs/workflows/tabular_q_learning_riverswim.yaml",
+            "workflow": _tabular_workflow(),
             "method": "grid",
             "metric": {"name": "mean_eval_return", "goal": "maximize"},
             "parameters": {
@@ -91,7 +189,7 @@ def test_sweep_summarize_computes_train_return_last_n_from_history(tmp_path: Pat
         {
             "name": "history sweep",
             "sweep_id": "history-sweep",
-            "workflow": "configs/workflows/tabular_q_learning_riverswim.yaml",
+            "workflow": _tabular_workflow(),
             "method": "grid",
             "metric": {"name": "mean_train_return_last_n", "goal": "maximize", "last_n": 2},
             "parameters": {
@@ -132,7 +230,7 @@ def test_sweep_summarize_averages_seed_replicates_by_configuration(tmp_path: Pat
         {
             "name": "replicate sweep",
             "sweep_id": "replicate-sweep",
-            "workflow": "configs/workflows/tabular_q_learning_riverswim.yaml",
+            "workflow": _tabular_workflow(),
             "method": "grid",
             "metric": {"name": "mean_eval_return", "goal": "maximize"},
             "parameters": {

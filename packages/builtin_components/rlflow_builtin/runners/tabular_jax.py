@@ -340,9 +340,12 @@ def _write_episode_history(
     discounted_returns: np.ndarray | None = None,
 ) -> None:
     with path.open("w", encoding="utf-8") as handle:
+        env_step = 0
         for idx, (episode_return, episode_length, loss) in enumerate(zip(returns, lengths, losses, strict=True)):
+            env_step += int(episode_length)
             row = {
                 "episode": idx,
+                "env_step": env_step,
                 "return": float(episode_return),
                 "length": int(episode_length),
                 "loss": float(loss),
@@ -362,11 +365,14 @@ def _write_eval_history(
     discounted_returns: np.ndarray | None = None,
 ) -> None:
     with path.open("w", encoding="utf-8") as handle:
+        env_step = 0
         for idx, (episode_return, episode_length) in enumerate(
             zip(returns, lengths, strict=True)
         ):
+            env_step += int(episode_length)
             row = {
                 "episode": idx,
+                "env_step": env_step,
                 "return": float(episode_return),
                 "length": int(episode_length),
             }

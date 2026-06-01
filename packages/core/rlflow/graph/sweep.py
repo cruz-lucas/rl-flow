@@ -183,7 +183,10 @@ class SweepCompiler:
         bootstrap_samples: int = 1000,
         seed: int = 0,
     ) -> dict[str, Any]:
-        manifest_data = yaml.safe_load(Path(manifest_path).read_text(encoding="utf-8"))
+        manifest_path = Path(manifest_path)
+        if manifest_path.is_dir():
+            manifest_path = manifest_path / "sweep_manifest.yaml"
+        manifest_data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
         compilation = SweepCompilation.model_validate(manifest_data)
         output_dir = Path(out_dir) if out_dir is not None else Path(compilation.sweep_dir) / "learning_curves"
         output_dir.mkdir(parents=True, exist_ok=True)

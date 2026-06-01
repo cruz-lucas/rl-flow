@@ -100,7 +100,11 @@ def intrinsic_reward_components() -> list[ComponentSpec]:
                 {
                     **_common_intrinsic_properties("count"),
                     "count_action_conditioning": _action_conditioning_schema(),
-                    "count_table_size": {"type": "integer", "minimum": 1},
+                    "count_key_mode": {
+                        "type": "string",
+                        "enum": ["dense_exact", "oracle_tabular"],
+                    },
+                    "count_table_size": {"type": "integer", "minimum": 0},
                     "count_table_overflow": {"type": "string", "enum": ["warn", "error"]},
                     "count_bonus_exponent": {"type": "number", "exclusiveMinimum": 0.0},
                     "count_min_count": {"type": "number", "exclusiveMinimum": 0.0},
@@ -111,6 +115,7 @@ def intrinsic_reward_components() -> list[ComponentSpec]:
                 **_common_intrinsic_defaults("count"),
                 "intrinsic_stats_decay": 1.0,
                 "count_action_conditioning": "input",
+                "count_key_mode": "dense_exact",
                 "count_table_size": 16384,
                 "count_table_overflow": "warn",
                 "count_bonus_exponent": 0.5,

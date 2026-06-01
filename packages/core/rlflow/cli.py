@@ -48,6 +48,15 @@ def _storage() -> Storage:
     return storage
 
 
+def _cli_error_message(exc: Exception) -> str:
+    if isinstance(exc, ModuleNotFoundError) and exc.name in {"pandas", "matplotlib", "tabulate"}:
+        return (
+            f"{exc.name} is required for analysis commands. Install analysis dependencies "
+            "with `uv sync --extra analysis` or run with `uv run --extra analysis ...`."
+        )
+    return str(exc)
+
+
 @components_app.command("list")
 def list_components(
     kind: str | None = typer.Option(None, help="Optional component kind filter."),
@@ -259,6 +268,112 @@ def sweep_export_learning_curves(
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(yaml.safe_dump(result, sort_keys=True))
+
+
+@sweep_app.command("plot-learning-curves")
+def sweep_plot_learning_curves(
+    path: Path,
+    out: Path | None = typer.Option(None, "--out"),
+    history: str = typer.Option("train", "--history"),
+    x: str = typer.Option("env_step", "--x"),
+    value: str = typer.Option("discounted_return", "--value"),
+    points: int = typer.Option(500, "--points", min=2),
+    bootstrap_samples: int = typer.Option(1000, "--bootstrap-samples", min=0),
+    seed: int = typer.Option(0, "--seed"),
+    top_k: int | None = typer.Option(None, "--top-k", min=1),
+    sort_by: str | None = typer.Option(None, "--sort-by"),
+    goal: str = typer.Option("maximize", "--goal"),
+) -> None:
+    try:
+        from rlflow.analysis.aggregation import aggregate_interpolated_curves, build_interpolated_curves
+        from rlflow.analysis.loading import load_sweep_histories, load_sweep_manifest
+        from rlflow.analysis.plotting import plot_learning_curves
+        from rlflow.analysis.summary import filter_top_k_curves, summarize_groups
+
+        if top_k is not None and sort_by is None:
+            raise ValueError("--top-k requires --sort-by")
+
+        compilation = load_sweep_manifest(path)
+        out_dir = out or Path(compilation.sweep_dir) / "analysis"
+
+        raw = load_sweep_histories(path, history=history)
+        if raw.empty:
+            raise ValueError("No histories found for this sweep")
+
+        interpolated = build_interpolated_curves(raw, x=x, y=value, points=points)
+        if interpolated.empty:
+            raise ValueError("No curve data remained after interpolation")
+        curves = aggregate_interpolated_curves(
+            interpolated,
+            bootstrap_samples=bootstrap_samples,
+            seed=seed,
+        )
+        if curves.empty:
+            raise ValueError("No curve data to export")
+
+        if top_k is not None:
+            summary = summarize_groups(path, metric=sort_by, goal=goal)
+            if summary.empty:
+                raise ValueError(f"No completed group found for metric: {sort_by}")
+            curves = filter_top_k_curves(curves, summary, top_k=top_k)
+            if curves.empty:
+                raise ValueError("Top-k filtering removed all curve data")
+
+        out_dir.mkdir(parents=True, exist_ok=True)
+        curves_csv = out_dir / "curves.csv"
+        curves.to_csv(curves_csv, index=False)
+        paths = plot_learning_curves(
+            curves,
+            out_dir=out_dir,
+            title=f"{history.title()} {value.replace('_', ' ').title()}",
+            x_label=x.replace("_", " ").title(),
+            y_label=value.replace("_", " ").title(),
+        )
+
+        typer.echo(yaml.safe_dump({"curves_csv": str(curves_csv), "plots": paths}, sort_keys=True))
+    except Exception as exc:
+        typer.echo(_cli_error_message(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@sweep_app.command("export-summary")
+def sweep_export_summary(
+    path: Path,
+    metric: str = typer.Option(..., "--metric"),
+    goal: str = typer.Option("maximize", "--goal"),
+    out: Path | None = typer.Option(None, "--out"),
+) -> None:
+    try:
+        from rlflow.analysis.loading import load_sweep_manifest
+        from rlflow.analysis.summary import export_summary_tables, summarize_groups
+
+        compilation = load_sweep_manifest(path)
+        out_dir = out or Path(compilation.sweep_dir) / "analysis"
+        summary = summarize_groups(path, metric=metric, goal=goal)
+        if summary.empty:
+            raise ValueError(f"No completed group found for metric: {metric}")
+        paths = export_summary_tables(summary, out_dir=out_dir)
+        typer.echo(yaml.safe_dump(paths, sort_keys=True))
+    except Exception as exc:
+        typer.echo(_cli_error_message(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@sweep_app.command("export-best")
+def sweep_export_best(
+    path: Path,
+    metric: str = typer.Option(..., "--metric"),
+    goal: str = typer.Option("maximize", "--goal"),
+    out: Path | None = typer.Option(None, "--out"),
+) -> None:
+    try:
+        from rlflow.analysis.best import export_best_config
+
+        paths = export_best_config(path, metric=metric, goal=goal, out_dir=out)
+        typer.echo(yaml.safe_dump(paths, sort_keys=True))
+    except Exception as exc:
+        typer.echo(_cli_error_message(exc), err=True)
+        raise typer.Exit(code=1) from exc
 
 
 def _override_sweep_backend(spec: SweepSpec, backend: str | None) -> None:

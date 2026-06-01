@@ -106,12 +106,13 @@ nodes:
     count_activation: null
     count_bonus_exponent: 0.5
     count_hidden_units: null
-    count_ignore_empty_room_distractor: true
+    count_ignore_empty_room_distractor: false
+    count_key_mode: oracle_tabular
     count_learning_rate: null
     count_min_count: 1
     count_optimizer: null
-    count_table_overflow: warn
-    count_table_size: 16384
+    count_table_overflow: error
+    count_table_size: 0
     debug: false
     debug_compact_observations: true
     debug_log_dir: tmp/debug_logs

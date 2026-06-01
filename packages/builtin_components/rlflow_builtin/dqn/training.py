@@ -22,6 +22,7 @@ AgentAlgorithm = Literal["dqn", "dqn_rmax"]
 IntrinsicKind = Literal["none", "rnd", "cfn", "count", "simhash"]
 ActionConditioning = Literal["none", "input", "output", "pair"]
 CountTableOverflow = Literal["warn", "error"]
+CountKeyMode = Literal["dense_exact", "oracle_tabular"]
 SimHashMode = Literal["static", "learned"]
 
 
@@ -90,6 +91,7 @@ class DqnIntrinsicConfig:
     cfn_final_tanh: bool = False
     count_table_size: int = 16384
     count_table_overflow: CountTableOverflow = "warn"
+    count_key_mode: CountKeyMode = "dense_exact"
     count_bonus_exponent: float = 0.5
     count_min_count: float = 1.0
     count_ignore_empty_room_distractor: bool = False
@@ -130,6 +132,8 @@ class DqnReplayState(NamedTuple):
     next_observations: jax.Array
     terminals: jax.Array
     intrinsic_targets: jax.Array
+    state_ids: jax.Array
+    next_state_ids: jax.Array
     source_observations: jax.Array
     source_next_observations: jax.Array
     size: jax.Array
@@ -172,6 +176,8 @@ class _DqnEnvironment:
     reward: Callable[[Any], jax.Array]
     done: Callable[[Any], jax.Array]
     encode: Callable[[Any], jax.Array]
+    oracle_state_id: Callable[[Any], jax.Array] | None = None
+    oracle_state_space_size: int | None = None
 
 
 def dqn_agent_config(component_id: str, config: dict[str, Any]) -> DqnAgentConfig:
@@ -325,6 +331,7 @@ def dqn_intrinsic_config(
             count_table_overflow=_count_table_overflow_mode(
                 config.get("count_table_overflow", "warn")
             ),
+            count_key_mode=_count_key_mode(config.get("count_key_mode", "dense_exact")),
             count_bonus_exponent=float(config["count_bonus_exponent"]),
             count_min_count=float(config["count_min_count"]),
             count_ignore_empty_room_distractor=bool(
@@ -398,6 +405,7 @@ def run_dqn_training(
             dqn_env.input_dim,
             dqn_env.num_actions,
             intrinsic_key,
+            oracle_state_space_size=dqn_env.oracle_state_space_size,
         ),
         replay_state=_initial_replay_state(
             replay.capacity,
@@ -579,6 +587,7 @@ def _train_episode(
                 train_state.key,
                 5,
             )
+            state_id = _oracle_state_id(dqn_env, env_state, intrinsic)
             action = _select_action(
                 agent,
                 train_state.params,
@@ -589,10 +598,12 @@ def _train_episode(
                 dqn_env.num_actions,
                 train_state.global_step,
                 training=True,
+                state_id=state_id,
             )
             next_env_state = dqn_env.step(env_state, action, env_key)
             next_source_observation = dqn_env.observation(next_env_state)
             next_observation = dqn_env.encode(next_source_observation)
+            next_state_id = _oracle_state_id(dqn_env, next_env_state, intrinsic)
             reward = dqn_env.reward(next_env_state).astype(jnp.float32)
             terminal = dqn_env.done(next_env_state)
             intrinsic_target = _sample_intrinsic_target(
@@ -610,6 +621,8 @@ def _train_episode(
                 next_source_observation,
                 terminal,
                 intrinsic_target,
+                state_id,
+                next_state_id,
             )
             intrinsic_state = _observe_intrinsic_transition(
                 train_state.intrinsic_state,
@@ -617,6 +630,7 @@ def _train_episode(
                 action,
                 intrinsic,
                 dqn_env.num_actions,
+                state_id=state_id,
             )
             train_state = train_state._replace(
                 replay_state=replay_state,
@@ -757,6 +771,7 @@ def _train_steps(
             train_state.key,
             6,
         )
+        state_id = _oracle_state_id(dqn_env, env_state, intrinsic)
         action = _select_action(
             agent,
             train_state.params,
@@ -767,10 +782,12 @@ def _train_steps(
             dqn_env.num_actions,
             train_state.global_step,
             training=True,
+            state_id=state_id,
         )
         next_env_state = dqn_env.step(env_state, action, env_key)
         next_source_observation = dqn_env.observation(next_env_state)
         next_observation = dqn_env.encode(next_source_observation)
+        next_state_id = _oracle_state_id(dqn_env, next_env_state, intrinsic)
         reward = dqn_env.reward(next_env_state).astype(jnp.float32)
         terminal = dqn_env.done(next_env_state)
         intrinsic_target = _sample_intrinsic_target(
@@ -788,6 +805,8 @@ def _train_steps(
             next_source_observation,
             terminal,
             intrinsic_target,
+            state_id,
+            next_state_id,
         )
         intrinsic_state = _observe_intrinsic_transition(
             train_state.intrinsic_state,
@@ -795,6 +814,7 @@ def _train_steps(
             action,
             intrinsic,
             dqn_env.num_actions,
+            state_id=state_id,
         )
         train_state = train_state._replace(
             replay_state=replay_state,
@@ -1035,9 +1055,7 @@ def _update_from_batch(
         state.intrinsic_state,
         intrinsic,
         agent,
-        observations,
-        actions,
-        next_observations,
+        batch,
         num_actions,
     )
     total_rewards, intrinsic_state, intrinsic_loss = _intrinsic_update(
@@ -1309,12 +1327,22 @@ def _count_update(
     intrinsic: DqnIntrinsicConfig,
     num_actions: int,
 ) -> tuple[jax.Array, DqnIntrinsicState, jax.Array]:
-    raw_bonus = _count_raw_bonus(
-        state,
-        batch["observations"],
-        batch["actions"],
-        intrinsic,
-        num_actions,
+    raw_bonus = (
+        _count_direct_bonus(
+            state,
+            batch["state_ids"],
+            batch["actions"],
+            intrinsic,
+            num_actions,
+        )
+        if _count_uses_oracle_tabular(intrinsic)
+        else _count_raw_bonus(
+            state,
+            batch["observations"],
+            batch["actions"],
+            intrinsic,
+            num_actions,
+        )
     )
     intrinsic_reward = raw_bonus
     # _normalize_intrinsic_reward(
@@ -1439,6 +1467,7 @@ def _eval_episode(
         def active(active_carry):
             key, env_state, observation, _done, episode_return, discounted_return, discount_power, episode_length = active_carry
             key, action_key, env_key = jax.random.split(key, 3)
+            state_id = _oracle_state_id(dqn_env, env_state, intrinsic)
             action = _select_action(
                 agent,
                 params,
@@ -1449,6 +1478,7 @@ def _eval_episode(
                 dqn_env.num_actions,
                 jnp.asarray(0, dtype=jnp.int32),
                 training=False,
+                state_id=state_id,
             )
             next_env_state = dqn_env.step(env_state, action, env_key)
             reward = dqn_env.reward(next_env_state).astype(jnp.float32)
@@ -1484,9 +1514,23 @@ def _make_dqn_environment(
     normalize_observations: bool = False,
 ) -> _DqnEnvironment:
     if env_component == "navix.env.grid":
-        from rlflow_builtin.environments.navix import create_navix_environment
+        from rlflow_builtin.environments.navix import (
+            _state_space_size,
+            _validate_spec,
+            create_navix_environment,
+            tabular_observation,
+        )
 
-        env = create_navix_environment(**_coerce_navix_settings(env_settings))
+        settings = _coerce_navix_settings(env_settings)
+        spec = _validate_spec(
+            settings["env_name"],
+            settings["size"],
+            settings["layout"],
+            settings["observation_mode"],
+            settings["action_set"],
+            settings.get("symbolic_distractor", "none"),
+        )
+        env = create_navix_environment(**settings)
         shape = tuple(env.observation_space.shape)
         input_dim = _input_dim_from_space(env.observation_space)
         observation_dtype = np.dtype(env.observation_space.dtype)
@@ -1518,6 +1562,8 @@ def _make_dqn_environment(
             reward=lambda timestep: timestep.reward,
             done=_timestep_done,
             encode=encode,
+            oracle_state_id=lambda timestep: tabular_observation(timestep.state, spec=spec),
+            oracle_state_space_size=_state_space_size(spec),
         )
 
     tabular_env = environment_config(env_component, env_settings)
@@ -1552,7 +1598,21 @@ def _make_dqn_environment(
         reward=lambda state: state[1] if isinstance(state, tuple) else jnp.asarray(0.0, dtype=jnp.float32),
         done=lambda state: state[2] if isinstance(state, tuple) else jnp.asarray(False),
         encode=encode,
+        oracle_state_id=lambda state: state[0] if isinstance(state, tuple) else state,
+        oracle_state_space_size=tabular_env.num_states,
     )
+
+
+def _oracle_state_id(
+    dqn_env: _DqnEnvironment,
+    env_state: Any,
+    intrinsic: DqnIntrinsicConfig,
+) -> jax.Array:
+    if _count_uses_oracle_tabular(intrinsic):
+        if dqn_env.oracle_state_id is None:
+            raise ValueError("count_key_mode='oracle_tabular' requires an environment oracle_state_id")
+        return jnp.asarray(dqn_env.oracle_state_id(env_state), dtype=jnp.int32)
+    return jnp.asarray(0, dtype=jnp.int32)
 
 
 def _initial_replay_state(
@@ -1571,6 +1631,8 @@ def _initial_replay_state(
         next_observations=jnp.zeros((capacity, input_dim), dtype=jnp.float32),
         terminals=jnp.zeros((capacity,), dtype=jnp.float32),
         intrinsic_targets=jnp.zeros((capacity, intrinsic_target_dim), dtype=jnp.float32),
+        state_ids=jnp.zeros((capacity,), dtype=jnp.int32),
+        next_state_ids=jnp.zeros((capacity,), dtype=jnp.int32),
         source_observations=jnp.zeros(source_shape, dtype=source_dtype),
         source_next_observations=jnp.zeros(source_shape, dtype=source_dtype),
         size=jnp.asarray(0, dtype=jnp.int32),
@@ -1588,6 +1650,8 @@ def _push_replay(
     source_next_observation: jax.Array,
     terminal: jax.Array,
     intrinsic_target: jax.Array,
+    state_id: jax.Array,
+    next_state_id: jax.Array,
 ) -> DqnReplayState:
     index = state.index
     capacity = state.observations.shape[0]
@@ -1598,6 +1662,8 @@ def _push_replay(
         next_observations=state.next_observations.at[index].set(next_observation),
         terminals=state.terminals.at[index].set(terminal.astype(jnp.float32)),
         intrinsic_targets=state.intrinsic_targets.at[index].set(intrinsic_target),
+        state_ids=state.state_ids.at[index].set(state_id.astype(jnp.int32)),
+        next_state_ids=state.next_state_ids.at[index].set(next_state_id.astype(jnp.int32)),
         source_observations=state.source_observations.at[index].set(
             source_observation.astype(state.source_observations.dtype)
         ),
@@ -1622,6 +1688,8 @@ def _sample_replay(
         "next_observations": state.next_observations[indices],
         "terminals": state.terminals[indices],
         "intrinsic_targets": state.intrinsic_targets[indices],
+        "state_ids": state.state_ids[indices],
+        "next_state_ids": state.next_state_ids[indices],
     }
 
 
@@ -1631,6 +1699,7 @@ def _initial_intrinsic_state(
     input_dim: int,
     num_actions: int,
     key: jax.Array,
+    oracle_state_space_size: int | None = None,
 ) -> DqnIntrinsicState:
     key, target_key, prior_key, predictor_key = jax.random.split(key, 4)
     del key
@@ -1689,7 +1758,11 @@ def _initial_intrinsic_state(
             target_output_dim,
         )
     optimizer = _optimizer(agent, intrinsic.learning_rate, intrinsic.optimizer)
-    count_table_size = _intrinsic_count_table_size(intrinsic)
+    count_table_size = _intrinsic_count_table_size(
+        intrinsic,
+        num_actions=num_actions,
+        oracle_state_space_size=oracle_state_space_size,
+    )
     count_key_dim = _intrinsic_count_key_dim(input_dim, num_actions, intrinsic)
     return DqnIntrinsicState(
         target_params=target_params,
@@ -2027,6 +2100,7 @@ def _select_action(
     global_step: jax.Array,
     *,
     training: bool,
+    state_id: jax.Array | None = None,
 ) -> jax.Array:
     if agent.algorithm == "dqn_rmax":
         return _rmax_action(
@@ -2037,6 +2111,7 @@ def _select_action(
             observation,
             key,
             num_actions,
+            state_id=state_id,
         )
     epsilon = (
         _epsilon(
@@ -2066,14 +2141,25 @@ def _rmax_action(
     observation: jax.Array,
     key: jax.Array,
     num_actions: int,
+    state_id: jax.Array | None = None,
 ) -> jax.Array:
     q_values = _apply_mlp(params, observation[None, :], agent.activation).squeeze(0)
-    bonuses = _intrinsic_bonus_for_all_actions(
-        intrinsic_state,
-        observation[None, :],
-        intrinsic,
-        num_actions,
-    ).squeeze(0)
+    if _count_uses_oracle_tabular(intrinsic):
+        if state_id is None:
+            raise ValueError("oracle_tabular count requires state_id for R-Max action selection")
+        bonuses = _count_direct_bonus_for_all_actions(
+            intrinsic_state,
+            state_id.reshape((1,)),
+            intrinsic,
+            num_actions,
+        ).squeeze(0)
+    else:
+        bonuses = _intrinsic_bonus_for_all_actions(
+            intrinsic_state,
+            observation[None, :],
+            intrinsic,
+            num_actions,
+        ).squeeze(0)
     optimistic_values = jnp.where(
         bonuses > agent.rmax_bonus_threshold,
         agent.rmax_decision_v_max,
@@ -2091,33 +2177,104 @@ def _rmax_batch_masks(
     intrinsic_state: DqnIntrinsicState,
     intrinsic: DqnIntrinsicConfig,
     agent: DqnAgentConfig,
-    observations: jax.Array,
-    actions: jax.Array,
-    next_observations: jax.Array,
+    batch: dict[str, jax.Array],
     num_actions: int,
 ) -> tuple[jax.Array, jax.Array]:
+    actions = batch["actions"]
     if agent.algorithm != "dqn_rmax":
         return (
             jnp.ones_like(actions, dtype=jnp.bool_),
             jnp.zeros_like(actions, dtype=jnp.bool_),
         )
-    current_bonus = _intrinsic_bonus(
-        intrinsic_state,
-        observations,
-        actions,
-        intrinsic,
-        num_actions,
-    )
-    next_bonuses = _intrinsic_bonus_for_all_actions(
-        intrinsic_state,
-        next_observations,
-        intrinsic,
-        num_actions,
-    )
+    if _count_uses_oracle_tabular(intrinsic):
+        current_bonus = _count_direct_bonus(
+            intrinsic_state,
+            batch["state_ids"],
+            actions,
+            intrinsic,
+            num_actions,
+        )
+        next_bonuses = _count_direct_bonus_for_all_actions(
+            intrinsic_state,
+            batch["next_state_ids"],
+            intrinsic,
+            num_actions,
+        )
+    else:
+        current_bonus = _intrinsic_bonus(
+            intrinsic_state,
+            batch["observations"],
+            actions,
+            intrinsic,
+            num_actions,
+        )
+        next_bonuses = _intrinsic_bonus_for_all_actions(
+            intrinsic_state,
+            batch["next_observations"],
+            intrinsic,
+            num_actions,
+        )
     return (
         current_bonus <= agent.rmax_bonus_threshold,
         jnp.any(next_bonuses > agent.rmax_bonus_threshold, axis=1),
     )
+
+
+def _count_uses_oracle_tabular(intrinsic: DqnIntrinsicConfig) -> bool:
+    return intrinsic.kind == "count" and intrinsic.count_key_mode == "oracle_tabular"
+
+
+def _count_action_conditioned(intrinsic: DqnIntrinsicConfig) -> bool:
+    return intrinsic.action_conditioning != "none"
+
+
+def _count_direct_indices(
+    state_ids: jax.Array,
+    actions: jax.Array,
+    intrinsic: DqnIntrinsicConfig,
+    num_actions: int,
+) -> jax.Array:
+    state_ids = state_ids.astype(jnp.int32)
+    actions = actions.astype(jnp.int32)
+    if not _count_action_conditioned(intrinsic):
+        return state_ids
+    return state_ids * num_actions + actions
+
+
+def _count_direct_bonus(
+    state: DqnIntrinsicState,
+    state_ids: jax.Array,
+    actions: jax.Array,
+    intrinsic: DqnIntrinsicConfig,
+    num_actions: int,
+) -> jax.Array:
+    indices = _count_direct_indices(state_ids, actions, intrinsic, num_actions)
+    indices = jnp.clip(indices, 0, state.counts.shape[0] - 1)
+    counts = state.counts[indices]
+    effective_counts = jnp.maximum(counts, intrinsic.count_min_count)
+    return 1.0 / (effective_counts**intrinsic.count_bonus_exponent)
+
+
+def _count_direct_bonus_for_all_actions(
+    state: DqnIntrinsicState,
+    state_ids: jax.Array,
+    intrinsic: DqnIntrinsicConfig,
+    num_actions: int,
+) -> jax.Array:
+    batch_size = state_ids.shape[0]
+    actions = jnp.broadcast_to(
+        jnp.arange(num_actions, dtype=jnp.int32),
+        (batch_size, num_actions),
+    )
+    repeated_state_ids = jnp.broadcast_to(state_ids[:, None], (batch_size, num_actions))
+    flat_bonus = _count_direct_bonus(
+        state,
+        repeated_state_ids.reshape(-1),
+        actions.reshape(-1),
+        intrinsic,
+        num_actions,
+    )
+    return flat_bonus.reshape(batch_size, num_actions)
 
 
 def _intrinsic_bonus_for_all_actions(
@@ -2199,9 +2356,21 @@ def _observe_intrinsic_transition(
     action: jax.Array,
     intrinsic: DqnIntrinsicConfig,
     num_actions: int,
+    *,
+    state_id: jax.Array | None = None,
 ) -> DqnIntrinsicState:
     if intrinsic.kind not in {"count", "simhash"}:
         return state
+    if _count_uses_oracle_tabular(intrinsic):
+        if state_id is None:
+            raise ValueError("oracle_tabular count requires state_id when observing transitions")
+        return _observe_count_direct_transition(
+            state,
+            state_id,
+            action,
+            intrinsic,
+            num_actions,
+        )
     key = _intrinsic_count_keys(
         state,
         observation[None, :],
@@ -2228,6 +2397,28 @@ def _observe_intrinsic_transition(
             state.count_overflow,
             jnp.logical_and(~found, ~has_capacity),
         ),
+    )
+
+
+def _observe_count_direct_transition(
+    state: DqnIntrinsicState,
+    state_id: jax.Array,
+    action: jax.Array,
+    intrinsic: DqnIntrinsicConfig,
+    num_actions: int,
+) -> DqnIntrinsicState:
+    index = _count_direct_indices(
+        state_id.reshape((1,)),
+        action.reshape((1,)),
+        intrinsic,
+        num_actions,
+    )[0]
+    in_bounds = jnp.logical_and(index >= 0, index < state.counts.shape[0])
+    safe_index = jnp.clip(index, 0, state.counts.shape[0] - 1)
+    counts = state.counts.at[safe_index].add(in_bounds.astype(jnp.float32))
+    return state._replace(
+        counts=counts,
+        count_overflow=jnp.logical_or(state.count_overflow, ~in_bounds),
     )
 
 
@@ -2394,8 +2585,21 @@ def _count_key_dim(
     return input_dim + num_actions
 
 
-def _intrinsic_count_table_size(intrinsic: DqnIntrinsicConfig) -> int:
+def _intrinsic_count_table_size(
+    intrinsic: DqnIntrinsicConfig,
+    *,
+    num_actions: int,
+    oracle_state_space_size: int | None,
+) -> int:
     if intrinsic.kind == "count":
+        if intrinsic.count_key_mode == "oracle_tabular":
+            if oracle_state_space_size is None:
+                raise ValueError("count_key_mode='oracle_tabular' requires oracle_state_space_size")
+            action_factor = num_actions if _count_action_conditioned(intrinsic) else 1
+            auto_size = oracle_state_space_size * action_factor
+            return int(intrinsic.count_table_size or auto_size)
+        if intrinsic.count_table_size < 1:
+            raise ValueError("dense_exact count requires count_table_size >= 1")
         return intrinsic.count_table_size
     if intrinsic.kind == "simhash":
         return intrinsic.simhash_table_size
@@ -2408,6 +2612,8 @@ def _intrinsic_count_key_dim(
     intrinsic: DqnIntrinsicConfig,
 ) -> int:
     if intrinsic.kind == "count":
+        if intrinsic.count_key_mode == "oracle_tabular":
+            return 1
         return _count_key_dim(input_dim, num_actions, intrinsic.action_conditioning)
     if intrinsic.kind == "simhash":
         return intrinsic.simhash_bits
@@ -2549,6 +2755,13 @@ def _count_table_overflow_mode(mode: str) -> CountTableOverflow:
     return normalized  # type: ignore[return-value]
 
 
+def _count_key_mode(value: str) -> CountKeyMode:
+    normalized = str(value).strip().lower()
+    if normalized not in {"dense_exact", "oracle_tabular"}:
+        raise ValueError("count_key_mode must be 'dense_exact' or 'oracle_tabular'")
+    return normalized  # type: ignore[return-value]
+
+
 def _simhash_mode(mode: str) -> SimHashMode:
     normalized = str(mode).strip().lower()
     if normalized == "autoencoder":
@@ -2564,8 +2777,12 @@ def _count_table_status(
 ) -> tuple[int | None, bool | None]:
     if intrinsic.kind not in {"count", "simhash"}:
         return None, None
+    if _count_uses_oracle_tabular(intrinsic):
+        entries = int(np.asarray(jax.device_get(jnp.sum(state.counts > 0))))
+    else:
+        entries = int(np.asarray(jax.device_get(state.count_size)))
     return (
-        int(np.asarray(jax.device_get(state.count_size))),
+        entries,
         bool(np.asarray(jax.device_get(state.count_overflow))),
     )
 
