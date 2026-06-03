@@ -290,6 +290,7 @@ export interface SweepInspectRequest {
 
 export interface ExperimentHistoryPoint {
   episode: number;
+  env_step?: number | null;
   return?: number | null;
   length?: number | null;
   loss?: number | null;
@@ -300,6 +301,7 @@ export interface ExperimentResult {
   status: string;
   run_dir: string;
   workflow_name: string;
+  sweep_dir?: string | null;
   sweep_id?: string | null;
   sweep_trial_id?: string | null;
   sweep_group_id?: string | null;

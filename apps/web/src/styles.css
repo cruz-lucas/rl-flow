@@ -487,8 +487,15 @@ button:disabled {
   grid-column: span 2;
 }
 
-.compact-field {
-  min-width: min(420px, 48vw);
+.run-add-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.9fr) minmax(260px, 1.4fr) auto auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.run-add-controls .wide {
+  min-width: 0;
 }
 
 .result-heading {
@@ -537,6 +544,16 @@ button:disabled {
   height: auto;
   border: 1px solid #e1e7ee;
   background: #ffffff;
+}
+
+.comparison-table {
+  max-height: 300px;
+}
+
+.comparison-table .icon-button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
 }
 
 .plot-title {
@@ -860,6 +877,7 @@ button:disabled {
 
   .dataset-controls,
   .offline-controls,
+  .run-add-controls,
   .results-layout,
   .results-controls,
   .sweep-layout,

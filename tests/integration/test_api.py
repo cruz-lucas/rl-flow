@@ -115,6 +115,76 @@ def test_api_compiles_sweep_from_saved_workflow(monkeypatch, tmp_path) -> None:
     assert summary["best"]["metric_count"] == 1
 
 
+def test_api_results_discovers_filesystem_sweep_trials_with_duplicate_sweep_ids(monkeypatch, tmp_path) -> None:
+    run_root = tmp_path / "runs"
+    monkeypatch.setenv("RLFLOW_DB_PATH", str(tmp_path / "rlflow.db"))
+    monkeypatch.setenv("RLFLOW_RUN_ROOT", str(run_root))
+
+    for sweep_name, episode_return in [("dqn-smoke", 1.0), ("dqn-countbased-smoke", 2.0)]:
+        sweep_dir = run_root / "sweeps" / sweep_name
+        run_dir = sweep_dir / "trials" / "group-0000" / "seed-0"
+        run_dir.mkdir(parents=True)
+        (run_dir / "logs").mkdir()
+        (run_dir / "metrics.json").write_text(
+            '{"mean_train_return": %.1f}' % episode_return,
+            encoding="utf-8",
+        )
+        (run_dir / "logs" / "train_history.jsonl").write_text(
+            '{"episode": 0, "return": %.1f}' % episode_return,
+            encoding="utf-8",
+        )
+        workflow = {
+            "name": "shared workflow",
+            "metadata": {
+                "experiment_id": "shared-sweep-trial-0000",
+                "sweep_id": "shared-sweep",
+                "sweep_trial_id": "trial-0000",
+                "sweep_group_id": "group-0000",
+                "sweep_group_run_dir": str(run_dir.parent),
+                "sweep_parameters": {"seed": 0},
+                "sweep_group_parameters": {},
+                "seed": 0,
+            },
+        }
+        (run_dir / "workflow.yaml").write_text(yaml.safe_dump(workflow), encoding="utf-8")
+        manifest = {
+            "sweep_id": "shared-sweep",
+            "name": "shared sweep",
+            "method": "grid",
+            "metric": {"name": "mean_train_return", "goal": "maximize"},
+            "sweep_dir": str(sweep_dir),
+            "manifest_path": str(sweep_dir / "sweep_manifest.yaml"),
+            "slurm_array_path": None,
+            "generated_files": [],
+            "trials": [
+                {
+                    "index": 0,
+                    "trial_id": "trial-0000",
+                    "group_id": "group-0000",
+                    "group_run_dir": str(run_dir.parent),
+                    "seed_value": 0,
+                    "experiment_id": "shared-sweep-trial-0000",
+                    "parameters": {"seed": 0},
+                    "run_dir": str(run_dir),
+                    "command": str(run_dir / "command.sh"),
+                    "workflow_path": str(run_dir / "workflow.yaml"),
+                    "metrics_path": str(run_dir / "metrics.json"),
+                }
+            ],
+        }
+        (sweep_dir / "sweep_manifest.yaml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
+
+    client = TestClient(create_app())
+    results = client.get("/experiments/results")
+
+    assert results.status_code == 200
+    rows = results.json()
+    discovered = [row for row in rows if row["sweep_id"] == "shared-sweep"]
+    assert len(discovered) == 2
+    assert {Path(row["sweep_dir"]).name for row in discovered} == {"dqn-smoke", "dqn-countbased-smoke"}
+    assert {row["metrics"]["mean_train_return"] for row in discovered} == {1.0, 2.0}
+
+
 def test_api_run_creates_unique_runs_and_refreshes_job_status(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("RLFLOW_DB_PATH", str(tmp_path / "rlflow.db"))
     monkeypatch.setenv("RLFLOW_RUN_ROOT", str(tmp_path / "runs"))

@@ -75,3 +75,11 @@ Summarize completed trials by reading each trial `metrics.json`:
 uv run python -m rlflow.cli sweep summarize runs/sweeps/navix-dqn
 uv run python -m rlflow.cli sweep summarize runs/sweeps/navix-dqn --metric mean_train_return_last_n --metric-last-n 50
 ```
+
+For headless Compute Canada / Alliance sessions, use the terminal report command after the array has finished:
+
+```bash
+uv run python -m rlflow.cli sweep report runs/sweeps/navix-dqn --metric mean_train_return_last_n --metric-last-n 50 --out runs/sweeps/navix-dqn/analysis
+```
+
+This prints a ranked table to stdout and writes `sweep_report.txt`, `sweep_summary.json`, and `sweep_groups.csv` into the analysis directory. Use `--all` to print every group or `--show-trials` to include per-seed rows.

@@ -88,7 +88,10 @@ After jobs finish:
 ```bash
 uv run python -m rlflow.cli sweep summarize runs/sweeps/navix-dqn
 uv run python -m rlflow.cli sweep summarize runs/sweeps/navix-dqn --metric mean_train_return_last_n --metric-last-n 50
+uv run python -m rlflow.cli sweep report runs/sweeps/navix-dqn --metric mean_train_return_last_n --metric-last-n 50 --out runs/sweeps/navix-dqn/analysis
 ```
+
+`sweep report` is intended for headless cluster sessions: it prints a ranked terminal table, averages seed replicates by non-seed hyperparameters, and optionally writes `sweep_report.txt`, `sweep_summary.json`, and `sweep_groups.csv`.
 
 ## Add a Component
 

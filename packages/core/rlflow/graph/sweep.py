@@ -151,6 +151,8 @@ class SweepCompiler:
             rows.append(
                 {
                     "trial_id": trial.trial_id,
+                    "group_id": trial.group_id,
+                    "seed_value": trial.seed_value,
                     "experiment_id": trial.experiment_id,
                     "run_dir": trial.run_dir,
                     "parameters": trial.parameters,
@@ -241,7 +243,7 @@ class SweepCompiler:
             group = grouped.setdefault(
                 key,
                 {
-                    "group_id": f"group-{len(grouped):04d}",
+                    "group_id": row.get("group_id") or f"group-{len(grouped):04d}",
                     "parameters": parameters,
                     "metrics": [],
                     "trial_ids": [],
@@ -258,6 +260,12 @@ class SweepCompiler:
             metric_mean = sum(metrics) / len(metrics)
             metric_min = min(metrics)
             metric_max = max(metrics)
+            if len(metrics) > 1:
+                metric_std = math.sqrt(
+                    sum((value - metric_mean) ** 2 for value in metrics) / (len(metrics) - 1)
+                )
+            else:
+                metric_std = 0.0
             groups.append(
                 {
                     **group,
@@ -265,6 +273,7 @@ class SweepCompiler:
                     "metric_mean": metric_mean,
                     "metric_min": metric_min,
                     "metric_max": metric_max,
+                    "metric_std": metric_std,
                     "metric_count": len(metrics),
                 }
             )

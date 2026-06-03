@@ -244,6 +244,46 @@ def sweep_summarize(
     typer.echo(yaml.safe_dump(summary, sort_keys=True))
 
 
+@sweep_app.command("report")
+def sweep_report(
+    path: Path,
+    metric: str | None = typer.Option(None, "--metric"),
+    goal: str | None = typer.Option(None, "--goal", help="maximize or minimize"),
+    metric_last_n: int | None = typer.Option(None, "--metric-last-n", min=1),
+    top_k: int = typer.Option(20, "--top-k", min=1, help="Number of ranked groups to print."),
+    all_groups: bool = typer.Option(False, "--all", help="Print all ranked groups."),
+    show_trials: bool = typer.Option(False, "--show-trials", help="Include per-trial metric rows."),
+    out: Path | None = typer.Option(None, "--out", help="Optional directory for report/json/csv files."),
+) -> None:
+    if path.is_dir():
+        path = path / "sweep_manifest.yaml"
+    if goal is not None and goal not in {"maximize", "minimize"}:
+        typer.echo("--goal must be maximize or minimize", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        from rlflow.analysis.report import export_sweep_report, format_sweep_report
+
+        resolved_top_k = None if all_groups else top_k
+        summary = SweepCompiler(_registry()).summarize(path, metric=metric, goal=goal, metric_last_n=metric_last_n)
+        typer.echo(format_sweep_report(summary, top_k=resolved_top_k, include_trials=show_trials))
+
+        if out is not None:
+            paths = export_sweep_report(
+                summary,
+                out_dir=out,
+                top_k=resolved_top_k,
+                include_trials=show_trials,
+            )
+            typer.echo("")
+            typer.echo("Wrote files:")
+            for label, output_path in paths.items():
+                typer.echo(f"{label}: {output_path}")
+    except Exception as exc:
+        typer.echo(_cli_error_message(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
 @sweep_app.command("export-learning-curves")
 def sweep_export_learning_curves(
     path: Path,
