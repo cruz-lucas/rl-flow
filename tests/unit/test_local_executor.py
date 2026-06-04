@@ -4,6 +4,7 @@ from pathlib import Path
 from rlflow.execution.local import LocalExecutor
 from rlflow.schemas.experiment import ExperimentSpec
 from rlflow.schemas.workflow import WorkflowSpec
+from rlflow.tracking.status import load_status
 
 
 def test_local_executor_creates_process_and_logs(tmp_path: Path) -> None:
@@ -29,3 +30,6 @@ def test_local_executor_creates_process_and_logs(tmp_path: Path) -> None:
 
     assert (tmp_path / "logs" / "local.out").exists()
     assert "hello" in (tmp_path / "logs" / "local.out").read_text(encoding="utf-8")
+    run_status = load_status(tmp_path)
+    assert run_status is not None
+    assert run_status.status == "completed"

@@ -53,6 +53,8 @@ RUN_DIRS=(
 TASK_ID="${SLURM_ARRAY_TASK_ID:?SLURM_ARRAY_TASK_ID is required}"
 COMMAND="${COMMANDS[$TASK_ID]}"
 RUN_DIR="${RUN_DIRS[$TASK_ID]}"
+export RLFLOW_BACKEND=slurm
+export RLFLOW_EXTERNAL_ID="${SLURM_ARRAY_JOB_ID:-${SLURM_JOB_ID:-}}_${TASK_ID}"
 
 mkdir -p "{{ sweep.sweep_dir }}/logs" "$RUN_DIR/logs"
 cd "$RUN_DIR"

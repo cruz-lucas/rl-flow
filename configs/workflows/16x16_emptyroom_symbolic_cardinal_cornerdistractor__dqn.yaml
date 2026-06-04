@@ -17,7 +17,7 @@ execution:
   cluster: null
   options: {}
 metadata:
-  experiment_id: 16x16-emptyroom-symbolic-cardinal-cornerdistractor--dqn-20260527-160741-9e1716ef
+  experiment_id: 16x16-emptyroom-symbolic-cardinal-cornerdistractor--dqn-20260604-022550-d0c87613
 name: 16x16_emptyroom_symbolic_cardinal_cornerdistractor__dqn
 nodes:
 - component: builtin.agent.dqn_jax
@@ -75,7 +75,7 @@ nodes:
     y: 211.7667702531175
 - component: builtin.replay.uniform
   config:
-    batch_size: 128
+    batch_size: 256
     capacity: 100000
     min_size: 2048
     save_dataset_path: ''

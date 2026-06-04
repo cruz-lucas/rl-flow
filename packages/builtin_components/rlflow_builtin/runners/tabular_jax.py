@@ -9,6 +9,7 @@ import jax
 import numpy as np
 import yaml
 
+from rlflow.tracking.logger import JsonlLogger
 from rlflow.registry.builtin import create_default_registry
 from rlflow.schemas.workflow import WorkflowSpec
 from rlflow_builtin.dqn.training import (
@@ -151,8 +152,10 @@ def _write_tabular_outputs(
 ) -> None:
     logs_dir = run_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
-    np.save(run_dir / "q_table.npy", result.q_table)
-    np.save(run_dir / "action_counts.npy", result.action_counts)
+    q_table_path = run_dir / "q_table.npy"
+    action_counts_path = run_dir / "action_counts.npy"
+    np.save(q_table_path, result.q_table)
+    np.save(action_counts_path, result.action_counts)
     _write_episode_history(
         logs_dir / "train_history.jsonl",
         result.train_returns,
@@ -215,9 +218,15 @@ def _write_tabular_outputs(
         "loaded_replay_dataset_path": replay_buffer.load_dataset_path or None,
         "offline_only": bool(replay_buffer.offline_only),
     }
-    (run_dir / "metrics.json").write_text(
-        json.dumps(summary, indent=2, sort_keys=True),
-        encoding="utf-8",
+    _write_summary_outputs(
+        run_dir,
+        summary,
+        artifacts={
+            "q_table": q_table_path,
+            "action_counts": action_counts_path,
+            "final_checkpoint": final_checkpoint,
+            "saved_replay_dataset": dataset_path,
+        },
     )
     print(json.dumps(summary, sort_keys=True))
 
@@ -297,9 +306,13 @@ def _write_dqn_outputs(
             else None
         ),
     }
-    (run_dir / "metrics.json").write_text(
-        json.dumps(summary, indent=2, sort_keys=True),
-        encoding="utf-8",
+    _write_summary_outputs(
+        run_dir,
+        summary,
+        artifacts={
+            "final_checkpoint": checkpoint_path,
+            "saved_replay_dataset": summary["saved_replay_dataset_path"],
+        },
     )
     print(json.dumps(summary, sort_keys=True))
 
@@ -379,6 +392,34 @@ def _write_eval_history(
             if discounted_returns is not None:
                 row["discounted_return"] = float(discounted_returns[idx])
             handle.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _write_summary_outputs(
+    run_dir: Path,
+    summary: dict[str, Any],
+    *,
+    artifacts: dict[str, Path | str | None],
+) -> None:
+    summaries_dir = run_dir / "summaries"
+    summaries_dir.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(summary, indent=2, sort_keys=True)
+    (summaries_dir / "metrics.json").write_text(text + "\n", encoding="utf-8")
+    (run_dir / "metrics.json").write_text(text + "\n", encoding="utf-8")
+
+    with JsonlLogger(run_dir) as logger:
+        for name, value in summary.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            logger.log_metric(name, float(value), phase="summary")
+        for name, path in artifacts.items():
+            if path is None:
+                continue
+            artifact_path = Path(path)
+            logger.log_artifact(
+                artifact_path,
+                name=name,
+                metadata={"exists": artifact_path.exists()},
+            )
 
 
 def _flatten_params(prefix: str, params: tuple[dict[str, jax.Array], ...]) -> dict[str, np.ndarray]:

@@ -92,7 +92,7 @@ class SweepCompiler:
                     run_dir=experiment.run_dir,
                     command=experiment.command,
                     workflow_path=str(trial_dir / "workflow.yaml"),
-                    metrics_path=str(trial_dir / "metrics.json"),
+                    metrics_path=str(trial_dir / "summaries" / "metrics.json"),
                 )
             )
 
@@ -349,10 +349,7 @@ class SweepCompiler:
         metric_name: str,
         metric_last_n: int | None,
     ) -> float | int | None:
-        metrics_path = Path(trial.metrics_path)
-        metrics = {}
-        if metrics_path.exists():
-            metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+        metrics = self._read_trial_metrics(trial)
         if metric_name in metrics:
             value = metrics[metric_name]
             return value if isinstance(value, (int, float)) else None
@@ -364,6 +361,27 @@ class SweepCompiler:
         if match is not None:
             return self._mean_train_return(Path(trial.run_dir), int(match.group(1)))
         return None
+
+    def _read_trial_metrics(self, trial: SweepTrial) -> dict[str, Any]:
+        candidates = [
+            Path(trial.metrics_path),
+            Path(trial.run_dir) / "summaries" / "metrics.json",
+            Path(trial.run_dir) / "metrics.json",
+        ]
+        seen: set[Path] = set()
+        for path in candidates:
+            if path in seen:
+                continue
+            seen.add(path)
+            if not path.exists():
+                continue
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(data, dict):
+                return data
+        return {}
 
     def _mean_train_return(self, run_dir: Path, count: int | None) -> float | None:
         history_path = run_dir / "logs" / "train_history.jsonl"

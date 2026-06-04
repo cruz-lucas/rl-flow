@@ -141,6 +141,12 @@ def test_sweep_compiler_writes_trial_workflows_and_slurm_array(tmp_path: Path) -
 
     assert len(compilation.trials) == 4
     assert Path(compilation.manifest_path).exists()
+    first_run_dir = Path(compilation.trials[0].run_dir)
+    assert (first_run_dir / "manifest.json").exists()
+    assert (first_run_dir / "status.json").exists()
+    assert (first_run_dir / "summaries").is_dir()
+    assert (first_run_dir / "artifacts" / "checkpoints").is_dir()
+    assert Path(compilation.trials[0].metrics_path) == first_run_dir / "summaries" / "metrics.json"
     assert compilation.slurm_array_path is not None
     script = Path(compilation.slurm_array_path).read_text(encoding="utf-8")
     assert "#SBATCH --array=0-3%2" in script

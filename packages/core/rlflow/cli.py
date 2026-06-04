@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 import subprocess
+from collections import Counter
 from pathlib import Path
+from typing import Any
 
 import typer
 import yaml
@@ -16,6 +19,7 @@ from rlflow.registry.builtin import create_default_registry
 from rlflow.schemas.sweep import SweepSpec
 from rlflow.schemas.workflow import ExecutionSpec, WorkflowSpec
 from rlflow.storage.sqlite import Storage
+from rlflow.tracking.status import RunStatusState, load_status
 
 app = typer.Typer(no_args_is_help=True)
 components_app = typer.Typer(no_args_is_help=True)
@@ -244,6 +248,52 @@ def sweep_summarize(
     typer.echo(yaml.safe_dump(summary, sort_keys=True))
 
 
+@sweep_app.command("status")
+def sweep_status(path: Path) -> None:
+    manifest_path = path / "sweep_manifest.yaml" if path.is_dir() else path
+    try:
+        manifest_data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        compilation = SweepCompiler(_registry()).summarize(manifest_path)
+    except Exception as exc:
+        typer.echo(_cli_error_message(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    from rlflow.schemas.sweep import SweepCompilation
+
+    sweep_compilation = SweepCompilation.model_validate(manifest_data)
+    counts: Counter[str] = Counter()
+    failed_details: list[str] = []
+    for trial in sweep_compilation.trials:
+        state = _trial_filesystem_state(Path(trial.run_dir))
+        counts[state] += 1
+        if state == RunStatusState.failed.value:
+            hint = _trial_failure_hint(Path(trial.run_dir))
+            failed_details.append(
+                f"{trial.trial_id}: {hint}" if hint else trial.trial_id
+            )
+
+    best = compilation.get("best") if isinstance(compilation, dict) else None
+    best_group = best.get("group_id") if isinstance(best, dict) else None
+    typer.echo(f"sweep: {sweep_compilation.sweep_id}")
+    typer.echo(f"total trials: {len(sweep_compilation.trials)}")
+    for state in [
+        RunStatusState.completed.value,
+        RunStatusState.failed.value,
+        RunStatusState.running.value,
+        RunStatusState.queued.value,
+        RunStatusState.compiled.value,
+        RunStatusState.cancelled.value,
+        RunStatusState.unknown.value,
+        "missing",
+    ]:
+        typer.echo(f"{state}: {counts[state]}")
+    typer.echo(f"best completed group: {best_group or '-'}")
+    if failed_details:
+        typer.echo("failed details:")
+        for detail in failed_details:
+            typer.echo(f"- {detail}")
+
+
 @sweep_app.command("report")
 def sweep_report(
     path: Path,
@@ -310,67 +360,155 @@ def sweep_export_learning_curves(
     typer.echo(yaml.safe_dump(result, sort_keys=True))
 
 
-@sweep_app.command("plot-learning-curves")
+@sweep_app.command("plot-learning-curves", context_settings={"allow_extra_args": True})
 def sweep_plot_learning_curves(
+    ctx: typer.Context,
     path: Path,
     out: Path | None = typer.Option(None, "--out"),
-    history: str = typer.Option("train", "--history"),
-    x: str = typer.Option("env_step", "--x"),
-    value: str = typer.Option("discounted_return", "--value"),
-    points: int = typer.Option(500, "--points", min=2),
-    bootstrap_samples: int = typer.Option(1000, "--bootstrap-samples", min=0),
-    seed: int = typer.Option(0, "--seed"),
+    config: Path | None = typer.Option(None, "--config"),
+    history: str | None = typer.Option(None, "--history"),
+    x: str | None = typer.Option(None, "--x"),
+    y: str | None = typer.Option(None, "--y", "--value"),
+    points: int | None = typer.Option(None, "--points", min=2),
+    bootstrap_samples: int | None = typer.Option(None, "--bootstrap-samples", min=0),
+    seed: int | None = typer.Option(None, "--seed"),
     top_k: int | None = typer.Option(None, "--top-k", min=1),
     sort_by: str | None = typer.Option(None, "--sort-by"),
-    goal: str = typer.Option("maximize", "--goal"),
+    goal: str | None = typer.Option(None, "--goal"),
+    groups: list[str] | None = typer.Option(None, "--groups"),
+    smooth_window: int | None = typer.Option(None, "--smooth-window", min=1),
 ) -> None:
     try:
-        from rlflow.analysis.aggregation import aggregate_interpolated_curves, build_interpolated_curves
-        from rlflow.analysis.loading import load_sweep_histories, load_sweep_manifest
+        from rlflow.analysis.curves import (
+            apply_curve_labels,
+            interpolate_and_aggregate,
+            smooth_curve_columns,
+        )
+        from rlflow.analysis.loading import load_histories, load_sweep_manifest
         from rlflow.analysis.plotting import plot_learning_curves
-        from rlflow.analysis.summary import filter_top_k_curves, summarize_groups
+        from rlflow.analysis.summary import summarize_groups
 
-        if top_k is not None and sort_by is None:
+        config_data = _load_plot_config(config)
+        curve_config = _resolve_curve_config(
+            config_data.get("curves", {}),
+            {
+                "history": history,
+                "x": x,
+                "y": y,
+                "points": points,
+                "bootstrap_samples": bootstrap_samples,
+                "seed": seed,
+                "top_k": top_k,
+                "sort_by": sort_by,
+                "goal": goal,
+                "smooth_window": smooth_window,
+            },
+        )
+        cli_groups = _resolve_cli_groups(groups, ctx.args)
+        configured_groups = _as_string_list(curve_config.get("groups"))
+        selected_groups = cli_groups if cli_groups is not None else configured_groups
+        curve_config["groups"] = selected_groups
+
+        if selected_groups and curve_config["top_k"] is not None:
+            raise ValueError("--groups and --top-k are mutually exclusive")
+        if curve_config["top_k"] is not None and curve_config["sort_by"] is None:
             raise ValueError("--top-k requires --sort-by")
+        if curve_config["goal"] not in {"maximize", "minimize"}:
+            raise ValueError("--goal must be maximize or minimize")
 
         compilation = load_sweep_manifest(path)
-        out_dir = out or Path(compilation.sweep_dir) / "analysis"
+        out_dir = out or Path(compilation.sweep_dir) / "analysis" / "plots"
 
-        raw = load_sweep_histories(path, history=history)
+        raw = load_histories(path, history=curve_config["history"])
         if raw.empty:
             raise ValueError("No histories found for this sweep")
 
-        interpolated = build_interpolated_curves(raw, x=x, y=value, points=points)
-        if interpolated.empty:
-            raise ValueError("No curve data remained after interpolation")
-        curves = aggregate_interpolated_curves(
-            interpolated,
-            bootstrap_samples=bootstrap_samples,
-            seed=seed,
+        curves = interpolate_and_aggregate(
+            raw,
+            x=curve_config["x"],
+            y=curve_config["y"],
+            points=curve_config["points"],
+            bootstrap_samples=curve_config["bootstrap_samples"],
+            seed=curve_config["seed"],
         )
         if curves.empty:
             raise ValueError("No curve data to export")
 
-        if top_k is not None:
-            summary = summarize_groups(path, metric=sort_by, goal=goal)
+        if selected_groups is None and curve_config["top_k"] is not None:
+            summary = summarize_groups(
+                path,
+                metric=curve_config["sort_by"],
+                goal=curve_config["goal"],
+            )
             if summary.empty:
-                raise ValueError(f"No completed group found for metric: {sort_by}")
-            curves = filter_top_k_curves(curves, summary, top_k=top_k)
-            if curves.empty:
-                raise ValueError("Top-k filtering removed all curve data")
+                raise ValueError(f"No completed group found for metric: {curve_config['sort_by']}")
+            selected_groups = list(summary.head(curve_config["top_k"])["group_id"])
+            curve_config["groups"] = selected_groups
 
-        out_dir.mkdir(parents=True, exist_ok=True)
-        curves_csv = out_dir / "curves.csv"
-        curves.to_csv(curves_csv, index=False)
-        paths = plot_learning_curves(
-            curves,
-            out_dir=out_dir,
-            title=f"{history.title()} {value.replace('_', ' ').title()}",
-            x_label=x.replace("_", " ").title(),
-            y_label=value.replace("_", " ").title(),
+        if selected_groups is not None:
+            keep = set(selected_groups)
+            curves = curves[curves["group_id"].isin(keep)].copy()
+            raw = _filter_raw_histories(raw, keep)
+            if curves.empty:
+                raise ValueError("Group filtering removed all curve data")
+
+        labels = config_data.get("labels", {}) or {}
+        if not isinstance(labels, dict):
+            raise ValueError("plot config labels must be a mapping")
+        curves = apply_curve_labels(curves, labels)
+        plot_curves = smooth_curve_columns(curves, window=curve_config["smooth_window"])
+
+        figure_config = _resolve_figure_config(
+            config_data.get("figure", {}),
+            x=curve_config["x"],
+            y=curve_config["y"],
         )
 
-        typer.echo(yaml.safe_dump({"curves_csv": str(curves_csv), "plots": paths}, sort_keys=True))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        raw_csv = out_dir / "curves_raw.csv"
+        interpolated_csv = out_dir / "curves_interpolated.csv"
+        curves_csv = out_dir / "curves.csv"
+        config_path = out_dir / "plot_config.yaml"
+        _write_dataframe_csv(raw, raw_csv)
+        _write_dataframe_csv(curves, interpolated_csv)
+        _write_dataframe_csv(curves, curves_csv)
+
+        plot_curves_csv = None
+        if curve_config["smooth_window"] and curve_config["smooth_window"] > 1:
+            plot_curves_csv = out_dir / "curves_plot.csv"
+            _write_dataframe_csv(plot_curves, plot_curves_csv)
+
+        paths = plot_learning_curves(
+            plot_curves,
+            out_dir=out_dir,
+            x_label=figure_config["x_label"],
+            y_label=figure_config["y_label"],
+            title=figure_config["title"],
+            legend_title=figure_config["legend_title"],
+            width=figure_config["width"],
+            height=figure_config["height"],
+            dpi=figure_config["dpi"],
+        )
+        resolved_config = {
+            "figure": figure_config,
+            "curves": curve_config,
+            "labels": labels,
+        }
+        config_path.write_text(
+            yaml.safe_dump(resolved_config, sort_keys=False),
+            encoding="utf-8",
+        )
+
+        result = {
+            "curves_raw_csv": str(raw_csv),
+            "curves_interpolated_csv": str(interpolated_csv),
+            "curves_csv": str(curves_csv),
+            "plot_config": str(config_path),
+            "plots": {key: str(value) for key, value in paths.items()},
+        }
+        if plot_curves_csv is not None:
+            result["curves_plot_csv"] = str(plot_curves_csv)
+        typer.echo(yaml.safe_dump(result, sort_keys=True))
     except Exception as exc:
         typer.echo(_cli_error_message(exc), err=True)
         raise typer.Exit(code=1) from exc
@@ -414,6 +552,175 @@ def sweep_export_best(
     except Exception as exc:
         typer.echo(_cli_error_message(exc), err=True)
         raise typer.Exit(code=1) from exc
+
+
+def _trial_filesystem_state(run_dir: Path) -> str:
+    if not run_dir.exists():
+        return "missing"
+    status = load_status(run_dir)
+    if status is not None:
+        return status.status.value
+    if (
+        (run_dir / "summaries" / "metrics.json").exists()
+        or (run_dir / "metrics.json").exists()
+        or (run_dir / "logs" / "train_history.jsonl").exists()
+        or (run_dir / "logs" / "eval_history.jsonl").exists()
+    ):
+        return RunStatusState.completed.value
+    return RunStatusState.compiled.value
+
+
+def _trial_failure_hint(run_dir: Path) -> str | None:
+    candidates = [
+        run_dir / "logs" / "stderr.log",
+        run_dir / "logs" / "local.err",
+        *(sorted((run_dir / "logs").glob("slurm-*.err")) if (run_dir / "logs").exists() else []),
+    ]
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            lines = [line.strip() for line in path.read_text(encoding="utf-8", errors="replace").splitlines()]
+        except OSError:
+            continue
+        lines = [line for line in lines if line]
+        if lines:
+            return lines[-1]
+    return None
+
+
+def _load_plot_config(path: Path | None) -> dict[str, Any]:
+    if path is None:
+        return {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        raise ValueError("plot config must be a YAML mapping")
+    return data
+
+
+def _resolve_curve_config(
+    config_section: Any,
+    overrides: dict[str, Any],
+) -> dict[str, Any]:
+    if config_section is None:
+        config_section = {}
+    if not isinstance(config_section, dict):
+        raise ValueError("plot config curves section must be a mapping")
+
+    config = {
+        "history": "train",
+        "x": "env_step",
+        "y": "discounted_return",
+        "points": 500,
+        "bootstrap_samples": 1000,
+        "seed": 0,
+        "top_k": None,
+        "sort_by": None,
+        "goal": "maximize",
+        "groups": None,
+        "smooth_window": None,
+    }
+    if "value" in config_section and "y" not in config_section:
+        config_section = {**config_section, "y": config_section["value"]}
+    for key, value in config_section.items():
+        if key in config:
+            config[key] = value
+    for key, value in overrides.items():
+        if value is not None:
+            config[key] = value
+
+    config["points"] = int(config["points"])
+    config["bootstrap_samples"] = int(config["bootstrap_samples"])
+    config["seed"] = int(config["seed"])
+    config["top_k"] = None if config["top_k"] is None else int(config["top_k"])
+    config["smooth_window"] = (
+        None if config["smooth_window"] is None else int(config["smooth_window"])
+    )
+    config["history"] = str(config["history"])
+    config["x"] = str(config["x"])
+    config["y"] = str(config["y"])
+    config["goal"] = str(config["goal"])
+    return config
+
+
+def _resolve_figure_config(config_section: Any, *, x: str, y: str) -> dict[str, Any]:
+    if config_section is None:
+        config_section = {}
+    if not isinstance(config_section, dict):
+        raise ValueError("plot config figure section must be a mapping")
+
+    config = {
+        "width": 3.25,
+        "height": 2.35,
+        "dpi": 300,
+        "title": None,
+        "x_label": _axis_label(x),
+        "y_label": _axis_label(y),
+        "legend_title": None,
+    }
+    for key, value in config_section.items():
+        if key in config:
+            config[key] = value
+    config["width"] = float(config["width"])
+    config["height"] = float(config["height"])
+    config["dpi"] = int(config["dpi"])
+    return config
+
+
+def _axis_label(name: str) -> str:
+    labels = {
+        "env_step": "Environment steps",
+        "episode": "Episode",
+        "return": "Return",
+        "discounted_return": "Discounted return",
+        "loss": "Loss",
+        "length": "Episode length",
+    }
+    return labels.get(name, name.replace("_", " ").title())
+
+
+def _resolve_cli_groups(
+    groups: list[str] | None,
+    extra_args: list[str],
+) -> list[str] | None:
+    selected = list(groups or [])
+    if extra_args:
+        if not selected:
+            raise ValueError(f"Unexpected extra arguments: {' '.join(extra_args)}")
+        selected.extend(extra_args)
+    return selected or None
+
+
+def _as_string_list(value: Any) -> list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value]
+    raise ValueError("groups must be a string or list of strings")
+
+
+def _filter_raw_histories(raw: Any, keep: set[str]) -> Any:
+    if "group_id" not in raw.columns:
+        return raw
+    present = raw["group_id"].dropna()
+    if present.empty:
+        return raw
+    return raw[raw["group_id"].astype(str).isin(keep)].copy()
+
+
+def _write_dataframe_csv(df: Any, path: Path) -> None:
+    export_df = df.copy()
+    for column in export_df.columns:
+        export_df[column] = export_df[column].apply(_csv_cell)
+    export_df.to_csv(path, index=False)
+
+
+def _csv_cell(value: Any) -> Any:
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value, sort_keys=True, default=str)
+    return value
 
 
 def _override_sweep_backend(spec: SweepSpec, backend: str | None) -> None:

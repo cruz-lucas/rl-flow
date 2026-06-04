@@ -22,4 +22,6 @@ def test_slurm_executor_renders_expected_script(tmp_path) -> None:
     assert "#SBATCH --partition=gpu" in script
     assert "#SBATCH --account=abc" in script
     assert "#SBATCH --cpus-per-task=2" in script
+    assert "export RLFLOW_BACKEND=slurm" in script
+    assert 'export RLFLOW_EXTERNAL_ID="${SLURM_JOB_ID:-}"' in script
     assert f'bash "{experiment.command}"' in script

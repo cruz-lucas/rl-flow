@@ -39,7 +39,7 @@ nodes:
     y: 187.27359897803342
 - component: builtin.replay.uniform
   config:
-    batch_size: 128
+    batch_size: 256
     capacity: 100000
     min_size: 4096
     save_dataset_path: ''
@@ -75,7 +75,7 @@ nodes:
     - 128
     - 128
     huber_delta: 1
-    learning_rate: 0.0001
+    learning_rate: 0.001
     loss_type: mse
     max_grad_norm: 10
     normalize_observations: false
@@ -106,7 +106,7 @@ nodes:
     count_activation: null
     count_bonus_exponent: 0.5
     count_hidden_units: null
-    count_ignore_empty_room_distractor: false
+    count_ignore_empty_room_distractor: true
     count_key_mode: oracle_tabular
     count_learning_rate: null
     count_min_count: 1

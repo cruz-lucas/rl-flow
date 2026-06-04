@@ -23,24 +23,6 @@ execution:
 slurm:
   max_parallel: 8
 parameters:
-  learning_rate:
-    target: nodes.agent-1.config.learning_rate
-    values: [0.00003, 0.0001, 0.0003, 0.0005, 0.001]
-  batch_size:
-    target: nodes.replay_buffer-3.config.batch_size
-    values: [32, 64, 128, 256]
-  buffer_size:
-    target: nodes.replay_buffer-3.config.capacity
-    values: [10000, 50000, 100000]
-  target_update_freq:
-    target: nodes.agent-1.config.target_update_freq
-    values: [512, 1024, 2048]
-  normalize_observations:
-    target: nodes.agent-1.config.normalize_observations
-    values: [true, false]
-  rmax_bonus_threshold:
-    target: nodes.agent-1.config.rmax_bonus_threshold
-    values: [0.1, 0.3, 0.5, 0.8, 0.9]
   seed:
     target: nodes.runner-4.config.seed
-    values: [0, 1, 2, 3, 4]
+    values: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]

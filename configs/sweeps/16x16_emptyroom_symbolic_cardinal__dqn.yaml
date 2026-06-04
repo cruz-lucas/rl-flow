@@ -23,15 +23,6 @@ execution:
 slurm:
   max_parallel: 8
 parameters:
-  learning_rate:
-    target: nodes.agent-1.config.learning_rate
-    values: [0.001, 0.0003, 0.0001]
-  epsilon_decay_steps:
-    target: nodes.agent-1.config.epsilon_decay_steps
-    values: [50000, 100000, 300000]
-  batch_size:
-    target: nodes.replay_buffer-3.config.batch_size
-    values: [32, 64, 128]
   seed:
     target: nodes.runner-4.config.seed
-    values: [0, 1, 2, 3, 4]
+    values: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]

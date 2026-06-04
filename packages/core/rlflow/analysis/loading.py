@@ -34,7 +34,10 @@ def load_trial_history(
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
-        row = json.loads(line)
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
         row["trial_id"] = trial.trial_id
         row["experiment_id"] = trial.experiment_id
         row["run_dir"] = trial.run_dir
@@ -46,20 +49,48 @@ def load_trial_history(
     return pd.DataFrame(rows)
 
 
-def load_sweep_histories(
-    manifest_path: str | Path,
-    *,
+def load_histories(
+    sweep_dir: str | Path,
     history: str = "train",
 ) -> pd.DataFrame:
-    compilation = load_sweep_manifest(manifest_path)
+    compilation = load_sweep_manifest(sweep_dir)
     frames = [
         load_trial_history(trial, history=history)
         for trial in compilation.trials
     ]
     frames = [frame for frame in frames if not frame.empty]
     if not frames:
-        return pd.DataFrame()
-    return pd.concat(frames, ignore_index=True)
+        return pd.DataFrame(columns=_history_columns())
+
+    df = pd.concat(frames, ignore_index=True)
+    for column in _history_columns():
+        if column not in df.columns:
+            df[column] = pd.NA
+    return df
+
+
+def load_sweep_histories(
+    manifest_path: str | Path,
+    *,
+    history: str = "train",
+) -> pd.DataFrame:
+    return load_histories(manifest_path, history=history)
+
+
+def _history_columns() -> list[str]:
+    return [
+        "trial_id",
+        "group_id",
+        "seed_value",
+        "run_dir",
+        "episode",
+        "env_step",
+        "return",
+        "discounted_return",
+        "length",
+        "loss",
+        "parameters",
+    ]
 
 
 def is_seed_parameter(key: str) -> bool:

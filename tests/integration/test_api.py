@@ -120,12 +120,17 @@ def test_api_results_discovers_filesystem_sweep_trials_with_duplicate_sweep_ids(
     monkeypatch.setenv("RLFLOW_DB_PATH", str(tmp_path / "rlflow.db"))
     monkeypatch.setenv("RLFLOW_RUN_ROOT", str(run_root))
 
-    for sweep_name, episode_return in [("dqn-smoke", 1.0), ("dqn-countbased-smoke", 2.0)]:
+    for sweep_name, episode_return, canonical_metrics in [
+        ("dqn-smoke", 1.0, False),
+        ("dqn-countbased-smoke", 2.0, True),
+    ]:
         sweep_dir = run_root / "sweeps" / sweep_name
         run_dir = sweep_dir / "trials" / "group-0000" / "seed-0"
         run_dir.mkdir(parents=True)
         (run_dir / "logs").mkdir()
-        (run_dir / "metrics.json").write_text(
+        metrics_path = run_dir / "summaries" / "metrics.json" if canonical_metrics else run_dir / "metrics.json"
+        metrics_path.parent.mkdir(parents=True, exist_ok=True)
+        metrics_path.write_text(
             '{"mean_train_return": %.1f}' % episode_return,
             encoding="utf-8",
         )
@@ -168,7 +173,7 @@ def test_api_results_discovers_filesystem_sweep_trials_with_duplicate_sweep_ids(
                     "run_dir": str(run_dir),
                     "command": str(run_dir / "command.sh"),
                     "workflow_path": str(run_dir / "workflow.yaml"),
-                    "metrics_path": str(run_dir / "metrics.json"),
+                    "metrics_path": str(metrics_path),
                 }
             ],
         }

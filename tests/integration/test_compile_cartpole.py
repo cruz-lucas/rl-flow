@@ -30,3 +30,6 @@ def test_compile_builtin_dqn_navix_fixture(tmp_path: Path) -> None:
 
     subprocess.run(["bash", str(tmp_path / "command.sh")], check=True)
     assert (tmp_path / "metrics.json").exists()
+    assert (tmp_path / "summaries" / "metrics.json").exists()
+    assert (tmp_path / "logs" / "events.jsonl").exists()
+    assert yaml.safe_load((tmp_path / "status.json").read_text(encoding="utf-8"))["status"] == "completed"

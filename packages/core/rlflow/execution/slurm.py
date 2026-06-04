@@ -13,6 +13,7 @@ from rlflow.schemas.experiment import ExperimentSpec
 from rlflow.schemas.job import JobInfo, JobState, JobStatus
 from rlflow.schemas.resources import SlurmOptions
 from rlflow.schemas.sweep import SweepCompilation
+from rlflow.tracking.status import RunStatusState, update_status
 
 
 class SlurmExecutor(ExecutionBackend):
@@ -84,6 +85,13 @@ class SlurmExecutor(ExecutionBackend):
         )
         external_id = result.stdout.strip().split()[-1]
         job_id = f"slurm-{external_id}"
+        update_status(
+            run_dir,
+            RunStatusState.queued,
+            backend="slurm",
+            external_id=external_id,
+            message=result.stdout.strip(),
+        )
         job = JobInfo(
             job_id=job_id,
             experiment_id=experiment.experiment_id,
@@ -115,6 +123,14 @@ class SlurmExecutor(ExecutionBackend):
         )
         external_id = result.stdout.strip().split()[-1]
         job_id = f"slurm-array-{external_id}"
+        for index, trial in enumerate(sweep.trials):
+            update_status(
+                trial.run_dir,
+                RunStatusState.queued,
+                backend="slurm",
+                external_id=f"{external_id}_{index}",
+                message=result.stdout.strip(),
+            )
         job = JobInfo(
             job_id=job_id,
             experiment_id=sweep.sweep_id,

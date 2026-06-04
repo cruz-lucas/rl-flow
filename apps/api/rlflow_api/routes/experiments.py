@@ -17,6 +17,7 @@ from rlflow.schemas.job import JobInfo
 from rlflow.schemas.sweep import SweepCompilation, SweepTrial
 from rlflow.schemas.workflow import WorkflowSpec
 from rlflow.storage.models import ExperimentRecord
+from rlflow.tracking.status import RunStatusState, load_status
 
 router = APIRouter(prefix="/experiments", tags=["experiments"])
 
@@ -109,7 +110,7 @@ def _experiment_result(record: ExperimentRecord) -> dict[str, Any]:
     metadata = workflow.get("metadata", {}) if isinstance(workflow, dict) else {}
     return _result_from_workflow(
         experiment_id=record.experiment_id,
-        status=record.status,
+        status=_record_status(run_dir, record.status),
         run_dir=run_dir,
         workflow=workflow,
         metadata=metadata,
@@ -188,26 +189,48 @@ def _result_from_workflow(
             else {}
         ),
         "seed": metadata.get("seed") if isinstance(metadata, dict) else None,
-        "metrics": _read_json(run_dir / "metrics.json"),
+        "metrics": _read_metrics(run_dir),
         "train_history": _read_jsonl(run_dir / "logs" / "train_history.jsonl"),
         "eval_history": _read_jsonl(run_dir / "logs" / "eval_history.jsonl"),
     }
 
 
 def _filesystem_status(run_dir: Path) -> str:
-    if (run_dir / "metrics.json").exists():
-        return "succeeded"
+    status = load_status(run_dir)
+    if status is not None:
+        return status.status.value
+    if (
+        (run_dir / "summaries" / "metrics.json").exists()
+        or (run_dir / "metrics.json").exists()
+    ):
+        return RunStatusState.completed.value
     if (
         (run_dir / "logs" / "train_history.jsonl").exists()
         or (run_dir / "logs" / "eval_history.jsonl").exists()
     ):
-        return "succeeded"
-    return "compiled"
+        return RunStatusState.completed.value
+    return RunStatusState.compiled.value
+
+
+def _record_status(run_dir: Path, fallback: str) -> str:
+    status = load_status(run_dir)
+    if status is not None:
+        return status.status.value
+    if (
+        (run_dir / "summaries" / "metrics.json").exists()
+        or (run_dir / "metrics.json").exists()
+        or (run_dir / "logs" / "train_history.jsonl").exists()
+        or (run_dir / "logs" / "eval_history.jsonl").exists()
+    ):
+        return RunStatusState.completed.value
+    return fallback
 
 
 def _result_modified_time(result: dict[str, Any]) -> float:
     run_dir = Path(str(result.get("run_dir", ""))).expanduser()
     candidates = [
+        run_dir / "status.json",
+        run_dir / "summaries" / "metrics.json",
         run_dir / "metrics.json",
         run_dir / "logs" / "train_history.jsonl",
         run_dir / "logs" / "eval_history.jsonl",
@@ -261,6 +284,13 @@ def _read_json(path: Path) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _read_metrics(run_dir: Path) -> dict[str, Any]:
+    metrics = _read_json(run_dir / "summaries" / "metrics.json")
+    if metrics:
+        return metrics
+    return _read_json(run_dir / "metrics.json")
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:

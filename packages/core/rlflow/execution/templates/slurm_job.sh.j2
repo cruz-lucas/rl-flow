@@ -36,6 +36,8 @@
 #SBATCH --mail-type={{ options.mail_type }}
 {% endif %}
 set -euo pipefail
+export RLFLOW_BACKEND=slurm
+export RLFLOW_EXTERNAL_ID="${SLURM_JOB_ID:-}"
 
 mkdir -p "{{ experiment.run_dir }}/logs"
 cd "{{ experiment.run_dir }}"

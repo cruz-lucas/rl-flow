@@ -8,6 +8,7 @@ from pathlib import Path
 from rlflow.execution.base import ExecutionBackend
 from rlflow.schemas.experiment import ExperimentSpec
 from rlflow.schemas.job import JobInfo, JobState, JobStatus
+from rlflow.tracking.status import RunStatus, RunStatusState, load_status, update_status
 
 
 class LocalExecutor(ExecutionBackend):
@@ -23,6 +24,7 @@ class LocalExecutor(ExecutionBackend):
         stderr_path = logs_dir / "local.err"
         stdout = stdout_path.open("ab")
         stderr = stderr_path.open("ab")
+        update_status(run_dir, RunStatusState.queued, backend="local")
         process = subprocess.Popen(
             ["/usr/bin/env", "bash", str(Path(experiment.command).resolve())],
             cwd=run_dir,
@@ -43,6 +45,13 @@ class LocalExecutor(ExecutionBackend):
             stdout_path=str(stdout_path),
             stderr_path=str(stderr_path),
         )
+        update_status(
+            run_dir,
+            RunStatusState.running,
+            backend="local",
+            external_id=str(process.pid),
+            message=f"pid {process.pid}",
+        )
         self._processes[job_id] = process
         self._jobs[job_id] = job
         return job
@@ -54,20 +63,59 @@ class LocalExecutor(ExecutionBackend):
         return JobStatus(state=JobState.unknown, message="job is not known to this process")
 
     def status_for_job(self, job: JobInfo) -> JobStatus:
-        if (Path(job.run_dir) / "metrics.json").exists():
-            return JobStatus(state=JobState.succeeded, message="metrics.json exists")
-
+        run_dir = Path(job.run_dir)
+        status = load_status(run_dir)
         job_id = job.job_id
         process = self._processes.get(job_id)
+        if status is not None and (
+            status.status
+            in {
+                RunStatusState.completed,
+                RunStatusState.failed,
+                RunStatusState.cancelled,
+                RunStatusState.unknown,
+            }
+            or process is None
+        ):
+            mapped = self._job_status_from_run_status(status)
+            if mapped is not None:
+                return mapped
+
         if process is not None:
             code = process.poll()
             if code is None:
                 return JobStatus(state=JobState.running, message=f"pid {process.pid}")
             if code == 0:
+                update_status(
+                    run_dir,
+                    RunStatusState.completed,
+                    backend="local",
+                    external_id=str(process.pid),
+                    exit_code=code,
+                )
                 return JobStatus(state=JobState.succeeded, message="process exited with code 0")
             if code < 0:
+                update_status(
+                    run_dir,
+                    RunStatusState.cancelled,
+                    backend="local",
+                    external_id=str(process.pid),
+                    exit_code=code,
+                    message=f"process terminated by signal {-code}",
+                )
                 return JobStatus(state=JobState.cancelled, message=f"process terminated by signal {-code}")
+            update_status(
+                run_dir,
+                RunStatusState.failed,
+                backend="local",
+                external_id=str(process.pid),
+                exit_code=code,
+                message=f"process exited with code {code}",
+            )
             return JobStatus(state=JobState.failed, message=f"process exited with code {code}")
+
+        if self._metrics_exist(run_dir):
+            return JobStatus(state=JobState.succeeded, message="metrics summary exists")
 
         if job.external_id is None:
             return JobStatus(state=JobState.unknown, message="job has no local pid")
@@ -98,3 +146,24 @@ class LocalExecutor(ExecutionBackend):
             if path and Path(path).exists():
                 chunks.append(f"== {label} ==\n{Path(path).read_text(encoding='utf-8', errors='replace')}")
         return "\n".join(chunks)
+
+    def _job_status_from_run_status(self, status: RunStatus) -> JobStatus | None:
+        if status.status == RunStatusState.completed:
+            return JobStatus(state=JobState.succeeded, message=status.message or "run completed")
+        if status.status == RunStatusState.failed:
+            return JobStatus(state=JobState.failed, message=status.message or "run failed")
+        if status.status == RunStatusState.cancelled:
+            return JobStatus(state=JobState.cancelled, message=status.message or "run cancelled")
+        if status.status == RunStatusState.running:
+            return JobStatus(state=JobState.running, message=status.message or "run is running")
+        if status.status == RunStatusState.queued:
+            return JobStatus(state=JobState.pending, message=status.message or "run is queued")
+        if status.status == RunStatusState.unknown:
+            return JobStatus(state=JobState.unknown, message=status.message or "run status is unknown")
+        return None
+
+    def _metrics_exist(self, run_dir: Path) -> bool:
+        return (
+            (run_dir / "summaries" / "metrics.json").exists()
+            or (run_dir / "metrics.json").exists()
+        )

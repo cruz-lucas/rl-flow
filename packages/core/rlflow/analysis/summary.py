@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -9,20 +10,24 @@ import pandas as pd
 
 from rlflow.analysis.loading import load_sweep_manifest, non_seed_parameters
 
+_TRAIN_RETURN_LAST_RE = re.compile(r"^mean_train_return_last_(\d+)$")
+
 
 def load_trial_metrics(manifest_path: str | Path) -> pd.DataFrame:
     compilation = load_sweep_manifest(manifest_path)
     rows: list[dict[str, Any]] = []
 
     for trial in compilation.trials:
-        metrics_path = Path(trial.metrics_path)
-        metrics: dict[str, Any] = {}
-        if metrics_path.is_file():
-            metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+        metrics_path, metrics = _load_metrics_for_trial(
+            trial.metrics_path,
+            trial.run_dir,
+        )
 
         rows.append(
             {
                 "trial_id": trial.trial_id,
+                "group_id": trial.group_id,
+                "seed_value": trial.seed_value,
                 "run_dir": trial.run_dir,
                 "metrics_path": trial.metrics_path,
                 "parameters": trial.parameters,
@@ -34,11 +39,34 @@ def load_trial_metrics(manifest_path: str | Path) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _load_metrics_for_trial(metrics_path: str, run_dir: str) -> tuple[Path, dict[str, Any]]:
+    candidates = [
+        Path(metrics_path),
+        Path(run_dir) / "summaries" / "metrics.json",
+        Path(run_dir) / "metrics.json",
+    ]
+    seen: set[Path] = set()
+    for path in candidates:
+        if path in seen:
+            continue
+        seen.add(path)
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict):
+            return path, data
+    return Path(metrics_path), {}
+
+
 def summarize_groups(
     manifest_path: str | Path,
     *,
     metric: str,
     goal: str = "maximize",
+    metric_last_n: int | None = None,
 ) -> pd.DataFrame:
     if goal not in {"maximize", "minimize"}:
         raise ValueError("goal must be 'maximize' or 'minimize'")
@@ -47,7 +75,7 @@ def summarize_groups(
     rows: list[dict[str, Any]] = []
 
     for _, row in trials.iterrows():
-        value = row["metrics"].get(metric)
+        value = _trial_metric_value(row, metric, metric_last_n)
         if not isinstance(value, (int, float)):
             continue
 
@@ -56,6 +84,7 @@ def summarize_groups(
             {
                 "trial_id": row["trial_id"],
                 "run_dir": row["run_dir"],
+                "group_id": row["group_id"],
                 "group_key": group_key,
                 "parameters": row["group_parameters"],
                 "metric": float(value),
@@ -69,8 +98,10 @@ def summarize_groups(
     summary_rows: list[dict[str, Any]] = []
     for group_key, group in df.groupby("group_key"):
         values = group["metric"].to_numpy(dtype=float)
+        group_id = _first_present(group["group_id"]) or f"group-{len(summary_rows):04d}"
         summary_rows.append(
             {
+                "group_id": group_id,
                 "group_key": group_key,
                 "parameters": group["parameters"].iloc[0],
                 "metric_mean": float(np.mean(values)),
@@ -96,6 +127,9 @@ def filter_top_k_curves(
     *,
     top_k: int,
 ) -> pd.DataFrame:
+    if "group_id" in curves.columns and "group_id" in summary.columns:
+        keep = set(summary.head(top_k)["group_id"])
+        return curves[curves["group_id"].isin(keep)].copy()
     keep = set(summary.head(top_k)["group_key"])
     return curves[curves["group_key"].isin(keep)].copy()
 
@@ -146,3 +180,59 @@ def _manual_markdown(df: pd.DataFrame) -> str:
         cells = [str(cell) if cell is not None else "" for cell in row]
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines)
+
+
+def _trial_metric_value(
+    row: pd.Series,
+    metric_name: str,
+    metric_last_n: int | None,
+) -> float | int | None:
+    metrics = row["metrics"]
+    if metric_name in metrics:
+        value = metrics[metric_name]
+        return value if isinstance(value, (int, float)) else None
+    if metric_name == "mean_train_return":
+        return _mean_train_return(Path(row["run_dir"]), None)
+    if metric_name == "mean_train_return_last_n":
+        return _mean_train_return(Path(row["run_dir"]), metric_last_n or 10)
+    match = _TRAIN_RETURN_LAST_RE.match(metric_name)
+    if match is not None:
+        return _mean_train_return(Path(row["run_dir"]), int(match.group(1)))
+    return None
+
+
+def _mean_train_return(run_dir: Path, count: int | None) -> float | None:
+    history_path = run_dir / "logs" / "train_history.jsonl"
+    if not history_path.exists():
+        return None
+    returns: list[float] = []
+    for line in history_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        value = row.get("return")
+        if isinstance(value, (int, float)):
+            returns.append(float(value))
+    if not returns:
+        return None
+    window = returns[-count:] if count is not None else returns
+    return float(np.mean(window))
+
+
+def _first_present(series: pd.Series) -> str | None:
+    for value in series:
+        if value is None:
+            continue
+        try:
+            missing = pd.isna(value)
+        except TypeError:
+            missing = False
+        if isinstance(missing, (bool, np.bool_)) and missing:
+            continue
+        text = str(value)
+        if text:
+            return text
+    return None
