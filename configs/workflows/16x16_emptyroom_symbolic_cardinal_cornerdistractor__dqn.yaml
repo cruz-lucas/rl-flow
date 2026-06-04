@@ -37,7 +37,7 @@ nodes:
     - 128
     - 128
     huber_delta: 1
-    learning_rate: 0.001
+    learning_rate: 0.0001
     loss_type: mse
     max_grad_norm: 10
     normalization: last
@@ -75,7 +75,7 @@ nodes:
     y: 211.7667702531175
 - component: builtin.replay.uniform
   config:
-    batch_size: 256
+    batch_size: 32
     capacity: 100000
     min_size: 2048
     save_dataset_path: ''
