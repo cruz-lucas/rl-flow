@@ -45,6 +45,8 @@ execution:
     gres: gpu:1
 slurm:
   max_parallel: 8
+  trials_per_task: 50
+  max_array_tasks: 1000
 parameters:
   learning_rate:
     target: nodes.agent.config.learning_rate
@@ -66,6 +68,8 @@ Compilation writes:
 - `sweep_manifest.yaml`
 - `slurm_array.sh`
 - one `trials/trial-*/` run directory per hyperparameter assignment
+
+`slurm.max_parallel` controls how many array tasks run concurrently. `slurm.trials_per_task` controls how many trials each array task runs serially, which reduces queued array elements for sites such as Compute Canada / Alliance that limit queue size. For example, 32,805 trials with `trials_per_task: 50` compiles to 657 array tasks. Set `execution.options.time` for the whole serial batch. `slurm.max_array_tasks` defaults to 1000 and fails compilation early if the generated array would exceed it.
 
 Each target path starts with `nodes.<node_id>.config`, for example `nodes.agent.config.learning_rate`. `method: random` also supports `values`, `uniform`, `loguniform`, and `int_uniform` parameters with `num_trials` and `seed`.
 

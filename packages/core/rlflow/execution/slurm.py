@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import shlex
 import shutil
 import subprocess
@@ -38,10 +39,15 @@ class SlurmExecutor(ExecutionBackend):
         options: dict[str, Any] | SlurmOptions | None = None,
         *,
         max_parallel: int | None = None,
+        trials_per_task: int | None = None,
     ) -> str:
         if not sweep.trials:
             raise ValueError("Cannot render a SLURM array script for an empty sweep")
         slurm_options = options if isinstance(options, SlurmOptions) else SlurmOptions(**(options or {}))
+        resolved_trials_per_task = trials_per_task or sweep.slurm_trials_per_task
+        if resolved_trials_per_task < 1:
+            raise ValueError("trials_per_task must be at least 1")
+        array_task_count = math.ceil(len(sweep.trials) / resolved_trials_per_task)
         template_dir = Path(__file__).parent / "templates"
         env = Environment(
             loader=FileSystemLoader(template_dir),
@@ -60,7 +66,9 @@ class SlurmExecutor(ExecutionBackend):
             sweep=sweep,
             options=slurm_options,
             tasks=tasks,
-            last_index=len(sweep.trials) - 1,
+            total_trials=len(sweep.trials),
+            trials_per_task=resolved_trials_per_task,
+            last_index=array_task_count - 1,
             max_parallel=max_parallel,
         )
 
@@ -123,12 +131,14 @@ class SlurmExecutor(ExecutionBackend):
         )
         external_id = result.stdout.strip().split()[-1]
         job_id = f"slurm-array-{external_id}"
+        trials_per_task = sweep.slurm_trials_per_task
         for index, trial in enumerate(sweep.trials):
+            array_task_id = index // trials_per_task
             update_status(
                 trial.run_dir,
                 RunStatusState.queued,
                 backend="slurm",
-                external_id=f"{external_id}_{index}",
+                external_id=f"{external_id}_{array_task_id}",
                 message=result.stdout.strip(),
             )
         job = JobInfo(

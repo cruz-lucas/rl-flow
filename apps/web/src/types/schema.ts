@@ -240,6 +240,8 @@ export interface SweepBuildRequest {
   num_trials?: number | null;
   random_seed: number;
   slurm_max_parallel?: number | null;
+  slurm_trials_per_task?: number;
+  slurm_max_array_tasks?: number | null;
 }
 
 export interface SweepTrial {
@@ -264,6 +266,8 @@ export interface SweepCompilation {
   sweep_dir: string;
   manifest_path: string;
   slurm_array_path?: string | null;
+  slurm_trials_per_task: number;
+  slurm_array_task_count?: number | null;
   trials: SweepTrial[];
   generated_files: string[];
 }

@@ -131,7 +131,7 @@ class WorkflowCompiler:
                 f"PROJECT_ROOT={shlex.quote(str(project_root))}",
                 'BACKEND="${RLFLOW_BACKEND:-local}"',
                 'EXTERNAL_ID="${RLFLOW_EXTERNAL_ID:-${SLURM_JOB_ID:-}}"',
-                'if [[ -n "${SLURM_ARRAY_JOB_ID:-}" && -n "${SLURM_ARRAY_TASK_ID:-}" ]]; then',
+                'if [[ -z "${RLFLOW_EXTERNAL_ID:-}" && -n "${SLURM_ARRAY_JOB_ID:-}" && -n "${SLURM_ARRAY_TASK_ID:-}" ]]; then',
                 '  EXTERNAL_ID="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"',
                 "fi",
                 'PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python"',

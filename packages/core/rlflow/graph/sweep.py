@@ -58,6 +58,16 @@ class SweepCompiler:
         trial_values = self._expand_trials(spec)
         if not trial_values:
             raise SweepCompilationError("Sweep did not produce any trials")
+        slurm_array_task_count = self._slurm_array_task_count(len(trial_values), spec.slurm.trials_per_task)
+        if base_workflow.execution.backend == "slurm" and spec.slurm.max_array_tasks is not None:
+            if slurm_array_task_count > spec.slurm.max_array_tasks:
+                raise SweepCompilationError(
+                    "Sweep requires "
+                    f"{slurm_array_task_count} SLURM array tasks for {len(trial_values)} trials "
+                    f"with trials_per_task={spec.slurm.trials_per_task}, exceeding "
+                    f"max_array_tasks={spec.slurm.max_array_tasks}. Increase slurm.trials_per_task, "
+                    "reduce the sweep, or set slurm.max_array_tasks."
+                )
 
         trials: list[SweepTrial] = []
         generated_files: list[str] = []
@@ -103,6 +113,12 @@ class SweepCompiler:
             metric=spec.metric,
             sweep_dir=str(sweep_dir),
             manifest_path=str(sweep_dir / "sweep_manifest.yaml"),
+            slurm_trials_per_task=spec.slurm.trials_per_task,
+            slurm_array_task_count=(
+                slurm_array_task_count
+                if base_workflow.execution.backend == "slurm"
+                else None
+            ),
             trials=trials,
             generated_files=generated_files,
         )
@@ -120,6 +136,7 @@ class SweepCompiler:
                 compilation,
                 base_workflow.execution.options,
                 max_parallel=spec.slurm.max_parallel,
+                trials_per_task=spec.slurm.trials_per_task,
             )
             slurm_path.write_text(script, encoding="utf-8")
             self._make_executable(slurm_path)
@@ -131,6 +148,9 @@ class SweepCompiler:
             )
 
         return compilation
+
+    def _slurm_array_task_count(self, trial_count: int, trials_per_task: int) -> int:
+        return math.ceil(trial_count / trials_per_task)
 
     def summarize(
         self,

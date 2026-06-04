@@ -1,9 +1,11 @@
 from pathlib import Path
 
+import pytest
 import yaml
 
-from rlflow.graph.sweep import SweepCompiler
+from rlflow.graph.sweep import SweepCompilationError, SweepCompiler
 from rlflow.registry.builtin import create_default_registry
+from rlflow.schemas.experiment import ExperimentSpec
 from rlflow.schemas.sweep import SweepSpec
 
 
@@ -152,6 +154,10 @@ def test_sweep_compiler_writes_trial_workflows_and_slurm_array(tmp_path: Path) -
     assert "#SBATCH --array=0-3%2" in script
     assert "#SBATCH --account=def-example" in script
     assert "#SBATCH --gres=gpu:1" in script
+    assert "START_INDEX=$((TASK_ID * TRIALS_PER_TASK))" in script
+    assert 'if ! bash "$COMMAND"; then' in script
+    command = (first_run_dir / "command.sh").read_text(encoding="utf-8")
+    assert 'if [[ -z "${RLFLOW_EXTERNAL_ID:-}" && -n "${SLURM_ARRAY_JOB_ID:-}"' in command
 
     workflow = yaml.safe_load(Path(compilation.trials[0].workflow_path).read_text(encoding="utf-8"))
     agent = next(node for node in workflow["nodes"] if node["id"] == "agent")
@@ -160,6 +166,84 @@ def test_sweep_compiler_writes_trial_workflows_and_slurm_array(tmp_path: Path) -
     assert replay["config"]["batch_size"] == 32
     assert workflow["metadata"]["experiment_id"] == "test-sweep-trial-0000"
     assert workflow["metadata"]["sweep_parameters"] == {"batch": 32, "lr": 0.001}
+
+
+def test_sweep_compiler_rejects_slurm_arrays_over_default_task_limit(tmp_path: Path) -> None:
+    spec = SweepSpec.model_validate(
+        {
+            "name": "oversized sweep",
+            "sweep_id": "oversized-sweep",
+            "workflow": _tabular_workflow(),
+            "method": "grid",
+            "execution": {
+                "backend": "slurm",
+                "options": {
+                    "time": "00:10:00",
+                    "cpus_per_task": 1,
+                    "mem": "4G",
+                },
+            },
+            "parameters": {
+                "seed": {
+                    "target": "nodes.runner.config.seed",
+                    "values": list(range(1001)),
+                },
+            },
+        }
+    )
+
+    with pytest.raises(SweepCompilationError, match="exceeding max_array_tasks=1000"):
+        SweepCompiler(create_default_registry(discover=False)).compile(spec, out_dir=tmp_path)
+
+
+def test_sweep_compiler_allows_oversized_sweep_when_batched(tmp_path: Path, monkeypatch) -> None:
+    spec = SweepSpec.model_validate(
+        {
+            "name": "batched sweep",
+            "sweep_id": "batched-sweep",
+            "workflow": _tabular_workflow(),
+            "method": "grid",
+            "execution": {
+                "backend": "slurm",
+                "options": {
+                    "time": "00:10:00",
+                    "cpus_per_task": 1,
+                    "mem": "4G",
+                },
+            },
+            "slurm": {"trials_per_task": 2},
+            "parameters": {
+                "seed": {
+                    "target": "nodes.runner.config.seed",
+                    "values": list(range(1001)),
+                },
+            },
+        }
+    )
+    compiler = SweepCompiler(create_default_registry(discover=False))
+
+    def fake_compile(workflow, out_dir=None):
+        run_dir = Path(out_dir)
+        return ExperimentSpec(
+            experiment_id=str(workflow.metadata["experiment_id"]),
+            workflow=workflow,
+            resolved_config={},
+            run_dir=str(run_dir),
+            command=str(run_dir / "command.sh"),
+            generated_files=[],
+            execution_backend="slurm",
+        )
+
+    monkeypatch.setattr(compiler.workflow_compiler, "compile", fake_compile)
+
+    compilation = compiler.compile(spec, out_dir=tmp_path)
+
+    assert len(compilation.trials) == 1001
+    assert compilation.slurm_trials_per_task == 2
+    assert compilation.slurm_array_task_count == 501
+    assert compilation.slurm_array_path is not None
+    script = Path(compilation.slurm_array_path).read_text(encoding="utf-8")
+    assert "#SBATCH --array=0-500" in script
 
 
 def test_sweep_summarize_selects_best_metric(tmp_path: Path) -> None:

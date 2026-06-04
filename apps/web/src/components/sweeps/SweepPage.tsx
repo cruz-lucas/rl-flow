@@ -26,6 +26,7 @@ export function SweepPage() {
   const [numTrials, setNumTrials] = useState(20);
   const [randomSeed, setRandomSeed] = useState(0);
   const [slurmMaxParallel, setSlurmMaxParallel] = useState(8);
+  const [slurmTrialsPerTask, setSlurmTrialsPerTask] = useState(1);
   const [selected, setSelected] = useState<SelectedParameter[]>([]);
 
   const candidates = useQuery({
@@ -77,6 +78,8 @@ export function SweepPage() {
       num_trials: method === "random" ? numTrials : null,
       random_seed: randomSeed,
       slurm_max_parallel: backend === "slurm" ? slurmMaxParallel : null,
+      slurm_trials_per_task: backend === "slurm" ? slurmTrialsPerTask : 1,
+      slurm_max_array_tasks: 1000,
     };
   }
 
@@ -203,16 +206,28 @@ export function SweepPage() {
               </>
             )}
             {backend === "slurm" && (
-              <label className="field">
-                <span>max parallel</span>
-                <input
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={slurmMaxParallel}
-                  onChange={(event) => setSlurmMaxParallel(intValue(event.target.value, 1))}
-                />
-              </label>
+              <>
+                <label className="field">
+                  <span>max parallel</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={slurmMaxParallel}
+                    onChange={(event) => setSlurmMaxParallel(intValue(event.target.value, 1))}
+                  />
+                </label>
+                <label className="field">
+                  <span>trials per task</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={slurmTrialsPerTask}
+                    onChange={(event) => setSlurmTrialsPerTask(intValue(event.target.value, 1))}
+                  />
+                </label>
+              </>
             )}
           </div>
           {(compile.error || run.error || candidates.error) && (

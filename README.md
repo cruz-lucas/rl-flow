@@ -83,6 +83,17 @@ On a Compute Canada / Alliance login node, edit the sweep `account`, modules, an
 uv run python -m rlflow.cli sweep run configs/sweeps/navix_dqn_compute_canada.yaml --out runs/sweeps/navix-dqn
 ```
 
+For large sweeps on clusters with queued-job limits, set `slurm.trials_per_task` to batch multiple trials into each array element:
+
+```yaml
+slurm:
+  max_parallel: 8
+  trials_per_task: 50
+  max_array_tasks: 1000
+```
+
+`max_parallel` limits how many array tasks run at once. `trials_per_task` reduces the number of queued array elements by running trials serially inside each task. Set `execution.options.time` for the full serial batch, not for one trial.
+
 After jobs finish:
 
 ```bash

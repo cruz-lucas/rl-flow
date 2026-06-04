@@ -50,6 +50,8 @@ class SweepSlurmSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     max_parallel: int | None = Field(default=None, ge=1)
+    trials_per_task: int = Field(default=1, ge=1)
+    max_array_tasks: int | None = Field(default=1000, ge=1)
 
 
 class SweepSpec(BaseModel):
@@ -103,5 +105,7 @@ class SweepCompilation(BaseModel):
     sweep_dir: str
     manifest_path: str
     slurm_array_path: str | None = None
+    slurm_trials_per_task: int = Field(default=1, ge=1)
+    slurm_array_task_count: int | None = Field(default=None, ge=1)
     trials: list[SweepTrial]
     generated_files: list[str] = Field(default_factory=list)

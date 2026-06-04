@@ -51,13 +51,15 @@ RUN_DIRS=(
 )
 
 TASK_ID="${SLURM_ARRAY_TASK_ID:?SLURM_ARRAY_TASK_ID is required}"
-COMMAND="${COMMANDS[$TASK_ID]}"
-RUN_DIR="${RUN_DIRS[$TASK_ID]}"
 export RLFLOW_BACKEND=slurm
-export RLFLOW_EXTERNAL_ID="${SLURM_ARRAY_JOB_ID:-${SLURM_JOB_ID:-}}_${TASK_ID}"
 
-mkdir -p "{{ sweep.sweep_dir }}/logs" "$RUN_DIR/logs"
-cd "$RUN_DIR"
+TRIALS_PER_TASK={{ trials_per_task }}
+TOTAL_TRIALS={{ total_trials }}
+START_INDEX=$((TASK_ID * TRIALS_PER_TASK))
+END_INDEX=$((START_INDEX + TRIALS_PER_TASK))
+if (( END_INDEX > TOTAL_TRIALS )); then
+  END_INDEX=$TOTAL_TRIALS
+fi
 
 {% for key, value in options.env.items() -%}
 export {{ key }}="{{ value }}"
@@ -74,4 +76,22 @@ conda activate "{{ options.conda_env }}"
 {% for line in options.preamble -%}
 {{ line }}
 {% endfor %}
-bash "$COMMAND"
+EXIT_CODE=0
+for ((TRIAL_INDEX = START_INDEX; TRIAL_INDEX < END_INDEX; TRIAL_INDEX++)); do
+  COMMAND="${COMMANDS[$TRIAL_INDEX]}"
+  RUN_DIR="${RUN_DIRS[$TRIAL_INDEX]}"
+  export RLFLOW_EXTERNAL_ID="${SLURM_ARRAY_JOB_ID:-${SLURM_JOB_ID:-}}_${TASK_ID}"
+  if ! mkdir -p "{{ sweep.sweep_dir }}/logs" "$RUN_DIR/logs"; then
+    EXIT_CODE=1
+    continue
+  fi
+  if ! cd "$RUN_DIR"; then
+    EXIT_CODE=1
+    continue
+  fi
+  if ! bash "$COMMAND"; then
+    EXIT_CODE=1
+  fi
+done
+
+exit "$EXIT_CODE"

@@ -78,6 +78,8 @@ class SweepBuildRequest(BaseModel):
     num_trials: int | None = Field(default=None, ge=1)
     random_seed: int = Field(default=0, ge=0)
     slurm_max_parallel: int | None = Field(default=None, ge=1)
+    slurm_trials_per_task: int = Field(default=1, ge=1)
+    slurm_max_array_tasks: int | None = Field(default=1000, ge=1)
 
 
 class SweepRunResponse(BaseModel):
@@ -238,7 +240,11 @@ def _sweep_spec(payload: SweepBuildRequest, workflow: WorkflowSpec) -> SweepSpec
         num_trials=payload.num_trials,
         seed=payload.random_seed,
         execution=execution,
-        slurm=SweepSlurmSpec(max_parallel=payload.slurm_max_parallel),
+        slurm=SweepSlurmSpec(
+            max_parallel=payload.slurm_max_parallel,
+            trials_per_task=payload.slurm_trials_per_task,
+            max_array_tasks=payload.slurm_max_array_tasks,
+        ),
     )
 
 
