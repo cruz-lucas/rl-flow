@@ -22,7 +22,9 @@ from rlflow.schemas.sweep import SweepCompilation, SweepParameter, SweepSpec, Sw
 from rlflow.schemas.workflow import WorkflowSpec
 
 
-_TRAIN_RETURN_LAST_RE = re.compile(r"^mean_train_return_last_(\d+)$")
+_TRAIN_HISTORY_METRIC_RE = re.compile(
+    r"^mean_train_(return|discounted_return)_last_(\d+)$"
+)
 
 
 class SweepCompilationError(ValueError):
@@ -160,8 +162,9 @@ class SweepCompiler:
         goal: str | None = None,
         metric_last_n: int | None = None,
     ) -> dict[str, Any]:
-        manifest_data = yaml.safe_load(Path(manifest_path).read_text(encoding="utf-8"))
-        compilation = SweepCompilation.model_validate(manifest_data)
+        from rlflow.analysis.loading import load_sweep_manifest
+
+        compilation = load_sweep_manifest(manifest_path)
         metric_name = metric or compilation.metric.name
         metric_goal = goal or compilation.metric.goal
         resolved_last_n = metric_last_n or compilation.metric.last_n
@@ -205,11 +208,9 @@ class SweepCompiler:
         bootstrap_samples: int = 1000,
         seed: int = 0,
     ) -> dict[str, Any]:
-        manifest_path = Path(manifest_path)
-        if manifest_path.is_dir():
-            manifest_path = manifest_path / "sweep_manifest.yaml"
-        manifest_data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-        compilation = SweepCompilation.model_validate(manifest_data)
+        from rlflow.analysis.loading import load_sweep_manifest
+
+        compilation = load_sweep_manifest(manifest_path)
         output_dir = Path(out_dir) if out_dir is not None else Path(compilation.sweep_dir) / "learning_curves"
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -374,12 +375,24 @@ class SweepCompiler:
             value = metrics[metric_name]
             return value if isinstance(value, (int, float)) else None
         if metric_name == "mean_train_return":
-            return self._mean_train_return(Path(trial.run_dir), None)
+            return self._mean_train_history_metric(Path(trial.run_dir), "return", None)
         if metric_name == "mean_train_return_last_n":
-            return self._mean_train_return(Path(trial.run_dir), metric_last_n or 10)
-        match = _TRAIN_RETURN_LAST_RE.match(metric_name)
+            return self._mean_train_history_metric(Path(trial.run_dir), "return", metric_last_n or 10)
+        if metric_name == "mean_train_discounted_return":
+            return self._mean_train_history_metric(Path(trial.run_dir), "discounted_return", None)
+        if metric_name == "mean_train_discounted_return_last_n":
+            return self._mean_train_history_metric(
+                Path(trial.run_dir),
+                "discounted_return",
+                metric_last_n or 10,
+            )
+        match = _TRAIN_HISTORY_METRIC_RE.match(metric_name)
         if match is not None:
-            return self._mean_train_return(Path(trial.run_dir), int(match.group(1)))
+            return self._mean_train_history_metric(
+                Path(trial.run_dir),
+                match.group(1),
+                int(match.group(2)),
+            )
         return None
 
     def _read_trial_metrics(self, trial: SweepTrial) -> dict[str, Any]:
@@ -403,21 +416,29 @@ class SweepCompiler:
                 return data
         return {}
 
-    def _mean_train_return(self, run_dir: Path, count: int | None) -> float | None:
+    def _mean_train_history_metric(
+        self,
+        run_dir: Path,
+        value_key: str,
+        count: int | None,
+    ) -> float | None:
         history_path = run_dir / "logs" / "train_history.jsonl"
         if not history_path.exists():
             return None
-        returns: list[float] = []
+        values: list[float] = []
         for line in history_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
-            row = json.loads(line)
-            value = row.get("return")
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            value = row.get(value_key)
             if isinstance(value, (int, float)):
-                returns.append(float(value))
-        if not returns:
+                values.append(float(value))
+        if not values:
             return None
-        window = returns[-count:] if count is not None else returns
+        window = values[-count:] if count is not None else values
         return sum(window) / len(window)
 
     def _history_series(

@@ -10,7 +10,9 @@ import pandas as pd
 
 from rlflow.analysis.loading import load_sweep_manifest, non_seed_parameters
 
-_TRAIN_RETURN_LAST_RE = re.compile(r"^mean_train_return_last_(\d+)$")
+_TRAIN_HISTORY_METRIC_RE = re.compile(
+    r"^mean_train_(return|discounted_return)_last_(\d+)$"
+)
 
 
 def load_trial_metrics(manifest_path: str | Path) -> pd.DataFrame:
@@ -192,20 +194,32 @@ def _trial_metric_value(
         value = metrics[metric_name]
         return value if isinstance(value, (int, float)) else None
     if metric_name == "mean_train_return":
-        return _mean_train_return(Path(row["run_dir"]), None)
+        return _mean_train_history_metric(Path(row["run_dir"]), "return", None)
     if metric_name == "mean_train_return_last_n":
-        return _mean_train_return(Path(row["run_dir"]), metric_last_n or 10)
-    match = _TRAIN_RETURN_LAST_RE.match(metric_name)
+        return _mean_train_history_metric(Path(row["run_dir"]), "return", metric_last_n or 10)
+    if metric_name == "mean_train_discounted_return":
+        return _mean_train_history_metric(Path(row["run_dir"]), "discounted_return", None)
+    if metric_name == "mean_train_discounted_return_last_n":
+        return _mean_train_history_metric(
+            Path(row["run_dir"]),
+            "discounted_return",
+            metric_last_n or 10,
+        )
+    match = _TRAIN_HISTORY_METRIC_RE.match(metric_name)
     if match is not None:
-        return _mean_train_return(Path(row["run_dir"]), int(match.group(1)))
+        return _mean_train_history_metric(
+            Path(row["run_dir"]),
+            match.group(1),
+            int(match.group(2)),
+        )
     return None
 
 
-def _mean_train_return(run_dir: Path, count: int | None) -> float | None:
+def _mean_train_history_metric(run_dir: Path, value_key: str, count: int | None) -> float | None:
     history_path = run_dir / "logs" / "train_history.jsonl"
     if not history_path.exists():
         return None
-    returns: list[float] = []
+    values: list[float] = []
     for line in history_path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
@@ -213,12 +227,12 @@ def _mean_train_return(run_dir: Path, count: int | None) -> float | None:
             row = json.loads(line)
         except json.JSONDecodeError:
             continue
-        value = row.get("return")
+        value = row.get(value_key)
         if isinstance(value, (int, float)):
-            returns.append(float(value))
-    if not returns:
+            values.append(float(value))
+    if not values:
         return None
-    window = returns[-count:] if count is not None else returns
+    window = values[-count:] if count is not None else values
     return float(np.mean(window))
 
 

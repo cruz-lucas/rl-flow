@@ -97,6 +97,28 @@ def test_plot_learning_curves_accepts_groups_after_single_option(tmp_path: Path)
     assert resolved_config["curves"]["groups"] == ["group-0000", "group-0001"]
 
 
+def test_plot_learning_curves_rebases_moved_sweep_paths(tmp_path: Path) -> None:
+    original_sweep_dir = _write_sweep(tmp_path / "original-sweep")
+    moved_sweep_dir = tmp_path / "moved-sweep"
+    original_sweep_dir.rename(moved_sweep_dir)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "sweep",
+            "plot-learning-curves",
+            str(moved_sweep_dir),
+            "--points",
+            "3",
+            "--bootstrap-samples",
+            "0",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (moved_sweep_dir / "analysis" / "plots" / "learning_curve.png").exists()
+
+
 def _write_sweep(sweep_dir: Path) -> Path:
     trials = []
     for index, (group_id, agent, seed, returns) in enumerate(

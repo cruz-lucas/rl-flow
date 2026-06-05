@@ -11,11 +11,56 @@ from rlflow.schemas.sweep import SweepCompilation, SweepTrial
 
 
 def load_sweep_manifest(path: str | Path) -> SweepCompilation:
-    path = Path(path)
+    path = Path(path).expanduser()
     if path.is_dir():
         path = path / "sweep_manifest.yaml"
+    path = path.resolve()
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return SweepCompilation.model_validate(data)
+    compilation = SweepCompilation.model_validate(data)
+    return _rebase_compilation_paths(compilation, manifest_path=path)
+
+
+def _rebase_compilation_paths(
+    compilation: SweepCompilation,
+    *,
+    manifest_path: Path,
+) -> SweepCompilation:
+    recorded_sweep_dir = Path(compilation.sweep_dir).expanduser().resolve()
+    sweep_dir = manifest_path.parent
+
+    def rebase(value: str | None) -> str | None:
+        if not value:
+            return value
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            return str(sweep_dir / path)
+        try:
+            relative = path.relative_to(recorded_sweep_dir)
+        except ValueError:
+            return value
+        return str(sweep_dir / relative)
+
+    trials = [
+        trial.model_copy(
+            update={
+                "group_run_dir": rebase(trial.group_run_dir),
+                "run_dir": rebase(trial.run_dir),
+                "command": rebase(trial.command),
+                "workflow_path": rebase(trial.workflow_path),
+                "metrics_path": rebase(trial.metrics_path),
+            }
+        )
+        for trial in compilation.trials
+    ]
+    return compilation.model_copy(
+        update={
+            "sweep_dir": str(sweep_dir),
+            "manifest_path": str(manifest_path),
+            "slurm_array_path": rebase(compilation.slurm_array_path),
+            "trials": trials,
+            "generated_files": [rebase(path) for path in compilation.generated_files],
+        }
+    )
 
 
 def load_trial_history(
