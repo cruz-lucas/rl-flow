@@ -1,0 +1,68 @@
+site_name: rl-flow
+site_description: Research documentation for schema-driven reinforcement learning workflows.
+site_url: https://cruz-lucas.github.io/rl-flow/
+repo_url: https://github.com/cruz-lucas/rl-flow
+repo_name: rl-flow
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - content.code.copy
+    - search.highlight
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - packages/core
+            - packages/builtin_components
+            - apps/api
+extra_javascript:
+  - https://unpkg.com/mermaid@10/dist/mermaid.min.js
+nav:
+  - Overview:
+      - Home: index.md
+      - Mental Model: overview/mental-model.md
+      - Quickstart: overview/quickstart.md
+  - Research Tutorials:
+      - RiverSwim Q-Learning: tutorials/riverswim.md
+      - Navix DQN: tutorials/navix-dqn.md
+      - DQN + R-Max Count Oracle: tutorials/rmax-count-oracle.md
+      - SLURM Sweeps: tutorials/slurm-sweep.md
+      - Learning-Curve Analysis: tutorials/learning-curves.md
+  - Concepts:
+      - Workflows: concepts/workflows.md
+      - Components: concepts/components.md
+      - Sweeps: concepts/sweeps.md
+      - Run Directories: concepts/run-directories.md
+      - Datasets and Artifacts: concepts/datasets-artifacts.md
+  - Reference:
+      - CLI: reference/cli.md
+      - Workflow Schema: reference/workflow-schema.md
+      - Sweep Schema: reference/sweep-schema.md
+      - Component Catalog: reference/component-catalog.md
+      - API Endpoints: reference/api.md
+      - Python API: reference/python-api.md
+  - Architecture:
+      - System Architecture: architecture/system.md
+      - Reproducibility Model: architecture/reproducibility.md
+      - Architecture Audit: architecture/audit.md
+  - Roadmap: roadmap.md

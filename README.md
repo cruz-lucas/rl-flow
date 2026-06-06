@@ -10,6 +10,14 @@ The frontend is schema-driven: component forms come from backend JSON schemas, s
 uv sync --extra dev
 ```
 
+For the documentation site:
+
+```bash
+uv sync --extra docs
+uv run python scripts/generate_docs_reference.py
+uv run mkdocs serve
+```
+
 ## Start the API
 
 ```bash
@@ -120,3 +128,10 @@ Return `ComponentSpec` objects with ports, JSON schema, defaults, and compile ta
 - Local job recovery after API restart is limited.
 - MLflow integration is an architecture stub.
 - The UI is intentionally minimal and focused on schema-driven workflow construction.
+
+## Documentation
+
+The research documentation lives in `docs/` and is built with MkDocs Material.
+It includes tutorials, diagrams, schema references, generated CLI/component
+references, an architecture audit, and a roadmap toward a research-grade
+framework.
