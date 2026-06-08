@@ -26,7 +26,7 @@ nodes:
     discount: 0.99
     double_q: false
     eps_decay_steps: 300000
-    eps_end: 0.001
+    eps_end: 0.01
     eps_start: 1
     epsilon_decay_steps: 300000
     epsilon_end: 0.001
@@ -53,8 +53,8 @@ nodes:
     optimizer_momentum: 0
     optimizer_weight_decay: 0
     seed: 0
-    target_update_freq: 2048
-    target_update_frequency: 2048
+    target_update_freq: 512
+    target_update_frequency: 512
     update_frequency: 4
   id: agent-1
   position:

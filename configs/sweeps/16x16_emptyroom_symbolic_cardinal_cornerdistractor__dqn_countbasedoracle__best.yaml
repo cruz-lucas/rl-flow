@@ -1,0 +1,30 @@
+name: navix_dqn_hparam_sweep
+description: Example SLURM array sweep for Compute Canada / Alliance clusters.
+sweep_id: navix-dqn-hparam-sweep
+workflow: ../workflows/16x16_emptyroom_symbolic_cardinal_cornerdistractor__dqn_rmax_countbasedoracle.yaml
+method: grid
+metric:
+  goal: maximize
+  last_n: 500
+  name: mean_train_return_last_n
+execution:
+  backend: slurm
+  options:
+    account: def-machado
+    time: "03:00:00"
+    cpus_per_task: 4
+    mem: 16G
+    modules:
+      - python/3.11
+    env:
+      XLA_PYTHON_CLIENT_PREALLOCATE: "false"
+    preamble:
+      - echo "Running ${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID} on $(hostname)"
+slurm:
+  max_parallel: 8
+  trials_per_task: 50
+  max_array_tasks: 1000
+parameters:
+  seed:
+    target: nodes.runner-4.config.seed
+    values: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]

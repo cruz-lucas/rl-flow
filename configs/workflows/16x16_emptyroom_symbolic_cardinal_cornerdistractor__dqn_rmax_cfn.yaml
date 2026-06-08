@@ -39,11 +39,11 @@ nodes:
     y: 187.27359897803342
 - component: builtin.replay.uniform
   config:
-    batch_size: 128
-    capacity: 100000
+    batch_size: 256
+    capacity: 50000
     min_size: 2048
     save_dataset_path: ''
-    updates_per_step: 1
+    updates_per_step: 10
   id: replay_buffer-3
   position:
     x: 174.2082513549356
@@ -64,14 +64,16 @@ nodes:
     y: 93.46329889898027
 - component: builtin.intrinsic.cfn
   config:
-    cfn_action_conditioning: input
-    cfn_activation: null
+    cfn_action_conditioning: pair
+    cfn_activation: gelu
     cfn_bonus_exponent: 0.5
     cfn_final_tanh: false
-    cfn_hidden_units: null
-    cfn_learning_rate: null
+    cfn_hidden_units:
+    - 128
+    - 128
+    cfn_learning_rate: 0.001
     cfn_optimizer: null
-    cfn_output_dim: 64
+    cfn_output_dim: 128
     cfn_prior_scale: 1
     cfn_update_period: 1
     cfn_use_random_prior: true
@@ -80,10 +82,10 @@ nodes:
     debug_log_dir: tmp/debug_logs
     debug_log_to_mlflow: true
     intrinsic_reward_center: false
-    intrinsic_reward_clip: 10
-    intrinsic_reward_epsilon: 0.0001
+    intrinsic_reward_clip: 100
+    intrinsic_reward_epsilon: 1
     intrinsic_reward_scale: 1
-    intrinsic_stats_decay: 0.99
+    intrinsic_stats_decay: 0.9
   id: intrinsic_reward-5
   position:
     x: 205.80263690633404
@@ -101,7 +103,7 @@ nodes:
     - 128
     - 128
     huber_delta: 1
-    learning_rate: 0.001
+    learning_rate: 0.0003
     loss_type: mse
     max_grad_norm: 10
     normalize_observations: false
@@ -116,10 +118,11 @@ nodes:
     optimizer_momentum: 0
     optimizer_weight_decay: 0
     rmax_bonus_threshold: 0.5
-    rmax_decision_v_max: 1
+    rmax_decision_v_max: 5
     rmax_update_v_max: 1
+    rmax_v_max: 1
     seed: 0
-    target_update_frequency: 2048
+    target_update_frequency: 512
     update_frequency: 1
   id: agent-1
   position:

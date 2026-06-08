@@ -40,7 +40,7 @@ nodes:
 - component: builtin.replay.uniform
   config:
     batch_size: 256
-    capacity: 100000
+    capacity: 50000
     min_size: 4096
     save_dataset_path: ''
     updates_per_step: 1
@@ -75,7 +75,7 @@ nodes:
     - 128
     - 128
     huber_delta: 1
-    learning_rate: 0.001
+    learning_rate: 0.0003
     loss_type: mse
     max_grad_norm: 10
     normalize_observations: false
@@ -89,12 +89,12 @@ nodes:
     optimizer_epsilon: 1.0e-08
     optimizer_momentum: 0
     optimizer_weight_decay: 0
-    rmax_bonus_threshold: 0.8
-    rmax_decision_v_max: 100
+    rmax_bonus_threshold: 0.5
+    rmax_decision_v_max: 5
     rmax_update_v_max: 1
     rmax_v_max: 1
     seed: 0
-    target_update_frequency: 2048
+    target_update_frequency: 512
     update_frequency: 1
   id: agent-1
   position:
