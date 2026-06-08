@@ -50,6 +50,14 @@ def replay_buffer_components() -> list[ComponentSpec]:
                     "batch_size": {"type": "integer", "minimum": 1},
                     "min_size": {"type": "integer", "minimum": 1},
                     "updates_per_step": {"type": "integer", "minimum": 1},
+                    "intrinsic_updates_per_step": {
+                        "type": ["integer", "null"],
+                        "minimum": 0,
+                    },
+                    "q_network_updates_per_step": {
+                        "type": ["integer", "null"],
+                        "minimum": 0,
+                    },
                     "save_dataset_path": {"type": "string"},
                 }
             ),
@@ -58,6 +66,8 @@ def replay_buffer_components() -> list[ComponentSpec]:
                 "batch_size": 32,
                 "min_size": 500,
                 "updates_per_step": 1,
+                "intrinsic_updates_per_step": None,
+                "q_network_updates_per_step": None,
                 "save_dataset_path": "",
             },
         ),

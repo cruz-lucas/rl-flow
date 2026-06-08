@@ -68,6 +68,8 @@ class DqnReplayConfig:
     min_size: int
     updates_per_step: int
     save_dataset_path: str = ""
+    intrinsic_updates_per_step: int | None = None
+    q_network_updates_per_step: int | None = None
 
 
 @dataclass(frozen=True)
@@ -162,6 +164,7 @@ class DqnTrainState(NamedTuple):
     key: jax.Array
     global_step: jax.Array
     gradient_step: jax.Array
+    intrinsic_gradient_step: jax.Array
 
 
 @dataclass(frozen=True)
@@ -247,14 +250,36 @@ def dqn_replay_config(component_id: str, config: dict[str, Any]) -> DqnReplayCon
         raise ValueError(f"{component_id} min_size cannot exceed capacity")
     if batch_size > capacity:
         raise ValueError(f"{component_id} batch_size cannot exceed capacity")
+    updates_per_step = int(config["updates_per_step"])
+    intrinsic_updates_per_step = _optional_update_count(
+        config,
+        "intrinsic_updates_per_step",
+        updates_per_step,
+    )
+    q_network_updates_per_step = _optional_update_count(
+        config,
+        "q_network_updates_per_step",
+        updates_per_step,
+    )
+    if intrinsic_updates_per_step < 0:
+        raise ValueError(f"{component_id} intrinsic_updates_per_step cannot be negative")
+    if q_network_updates_per_step < 0:
+        raise ValueError(f"{component_id} q_network_updates_per_step cannot be negative")
     return DqnReplayConfig(
         name=component_id,
         capacity=capacity,
         batch_size=batch_size,
         min_size=min_size,
-        updates_per_step=int(config["updates_per_step"]),
+        updates_per_step=updates_per_step,
+        intrinsic_updates_per_step=intrinsic_updates_per_step,
+        q_network_updates_per_step=q_network_updates_per_step,
         save_dataset_path=str(config.get("save_dataset_path", "")),
     )
+
+
+def _optional_update_count(config: dict[str, Any], key: str, default: int) -> int:
+    value = config.get(key)
+    return default if value is None else int(value)
 
 
 def dqn_intrinsic_config(
@@ -417,6 +442,7 @@ def run_dqn_training(
         key=key,
         global_step=jnp.asarray(0, dtype=jnp.int32),
         gradient_step=jnp.asarray(0, dtype=jnp.int32),
+        intrinsic_gradient_step=jnp.asarray(0, dtype=jnp.int32),
     )
     intrinsic_optimizer = _optimizer(agent, intrinsic.learning_rate, intrinsic.optimizer)
 
@@ -1012,38 +1038,100 @@ def _replay_updates(
     intrinsic_optimizer: optax.GradientTransformation,
     num_actions: int,
 ) -> tuple[DqnTrainState, jax.Array]:
-    def update_step(carry, _):
+    intrinsic_updates = _intrinsic_updates_per_step(replay)
+    if intrinsic.kind == "none":
+        intrinsic_updates = 0
+    q_network_updates = _q_network_updates_per_step(replay)
+
+    def intrinsic_update_step(carry, _):
         train_state, loss_sum = carry
         key, sample_key = jax.random.split(train_state.key)
         batch = _sample_replay(train_state.replay_state, sample_key, replay.batch_size)
         train_state = train_state._replace(key=key)
-        train_state, loss = _update_from_batch(
+        train_state, loss = _intrinsic_update_from_batch(
             train_state,
             batch,
-            agent,
             intrinsic,
-            q_optimizer,
             intrinsic_optimizer,
             num_actions,
         )
         return (train_state, loss_sum + loss), loss
 
-    (state, loss_sum), _ = jax.lax.scan(
-        update_step,
-        (state, jnp.asarray(0.0, dtype=jnp.float32)),
-        xs=None,
-        length=replay.updates_per_step,
+    def q_update_step(carry, _):
+        train_state, loss_sum = carry
+        key, sample_key = jax.random.split(train_state.key)
+        batch = _sample_replay(train_state.replay_state, sample_key, replay.batch_size)
+        train_state = train_state._replace(key=key)
+        train_state, loss = _q_update_from_batch(
+            train_state,
+            batch,
+            agent,
+            intrinsic,
+            q_optimizer,
+            num_actions,
+        )
+        return (train_state, loss_sum + loss), loss
+
+    zero_loss = jnp.asarray(0.0, dtype=jnp.float32)
+    intrinsic_loss_sum = zero_loss
+    if intrinsic_updates > 0:
+        (state, intrinsic_loss_sum), _ = jax.lax.scan(
+            intrinsic_update_step,
+            (state, zero_loss),
+            xs=None,
+            length=intrinsic_updates,
+        )
+    q_loss_sum = zero_loss
+    if q_network_updates > 0:
+        (state, q_loss_sum), _ = jax.lax.scan(
+            q_update_step,
+            (state, zero_loss),
+            xs=None,
+            length=q_network_updates,
+        )
+    intrinsic_loss = (
+        intrinsic_loss_sum / intrinsic_updates
+        if intrinsic_updates > 0
+        else zero_loss
     )
-    return state, loss_sum / replay.updates_per_step
+    q_loss = (
+        q_loss_sum / q_network_updates
+        if q_network_updates > 0
+        else zero_loss
+    )
+    return state, intrinsic_loss + q_loss
 
 
-def _update_from_batch(
+def _intrinsic_update_from_batch(
+    state: DqnTrainState,
+    batch: dict[str, jax.Array],
+    intrinsic: DqnIntrinsicConfig,
+    intrinsic_optimizer: optax.GradientTransformation,
+    num_actions: int,
+) -> tuple[DqnTrainState, jax.Array]:
+    _intrinsic_rewards, intrinsic_state, intrinsic_loss = _intrinsic_update(
+        state.intrinsic_state,
+        batch,
+        intrinsic,
+        intrinsic_optimizer,
+        num_actions,
+        state.intrinsic_gradient_step + 1,
+    )
+    return (
+        state._replace(
+            intrinsic_state=intrinsic_state,
+            intrinsic_gradient_step=state.intrinsic_gradient_step + 1,
+        ),
+        intrinsic_loss,
+    )
+
+
+def _q_update_from_batch(
     state: DqnTrainState,
     batch: dict[str, jax.Array],
     agent: DqnAgentConfig,
     intrinsic: DqnIntrinsicConfig,
     q_optimizer: optax.GradientTransformation,
-    intrinsic_optimizer: optax.GradientTransformation,
     num_actions: int,
 ) -> tuple[DqnTrainState, jax.Array]:
     observations = batch["observations"]
@@ -1058,18 +1146,19 @@ def _update_from_batch(
         batch,
         num_actions,
     )
-    total_rewards, intrinsic_state, intrinsic_loss = _intrinsic_update(
+    intrinsic_rewards = _batch_intrinsic_rewards(
         state.intrinsic_state,
         batch,
         intrinsic,
-        intrinsic_optimizer,
         num_actions,
-        state.gradient_step + 1,
     )
     intrinsic_reward_scale = (
         0.0 if agent.algorithm == "dqn_rmax" else intrinsic.intrinsic_reward_scale
     )
-    total_rewards = rewards + intrinsic_reward_scale * jax.lax.stop_gradient(total_rewards)
+    total_rewards = (
+        rewards
+        + intrinsic_reward_scale * jax.lax.stop_gradient(intrinsic_rewards)
+    )
 
     def q_loss_fn(params):
         return _q_loss(
@@ -1096,10 +1185,46 @@ def _update_from_batch(
             params=params,
             target_params=target_params,
             opt_state=opt_state,
-            intrinsic_state=intrinsic_state,
             gradient_step=gradient_step,
         ),
-        q_loss + intrinsic_loss,
+        q_loss,
+    )
+
+
+def _intrinsic_updates_per_step(replay: DqnReplayConfig) -> int:
+    if replay.intrinsic_updates_per_step is None:
+        return replay.updates_per_step
+    return replay.intrinsic_updates_per_step
+
+
+def _q_network_updates_per_step(replay: DqnReplayConfig) -> int:
+    if replay.q_network_updates_per_step is None:
+        return replay.updates_per_step
+    return replay.q_network_updates_per_step
+
+
+def _batch_intrinsic_rewards(
+    state: DqnIntrinsicState,
+    batch: dict[str, jax.Array],
+    intrinsic: DqnIntrinsicConfig,
+    num_actions: int,
+) -> jax.Array:
+    if intrinsic.kind == "none":
+        return jnp.zeros_like(batch["rewards"])
+    if _count_uses_oracle_tabular(intrinsic):
+        return _count_direct_bonus(
+            state,
+            batch["state_ids"],
+            batch["actions"],
+            intrinsic,
+            num_actions,
+        )
+    return _intrinsic_bonus(
+        state,
+        batch["observations"],
+        batch["actions"],
+        intrinsic,
+        num_actions,
     )
 
 

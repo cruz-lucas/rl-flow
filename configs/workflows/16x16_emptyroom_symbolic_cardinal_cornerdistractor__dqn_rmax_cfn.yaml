@@ -43,7 +43,9 @@ nodes:
     capacity: 50000
     min_size: 2048
     save_dataset_path: ''
-    updates_per_step: 10
+    updates_per_step: 1
+    intrinsic_updates_per_step: 1
+    q_network_updates_per_step: 1
   id: replay_buffer-3
   position:
     x: 174.2082513549356

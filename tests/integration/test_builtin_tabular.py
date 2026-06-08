@@ -14,15 +14,23 @@ from rlflow_builtin.dqn.training import (
     DqnAgentConfig,
     DqnIntrinsicConfig,
     DqnReplayConfig,
+    DqnTrainState,
+    _clone_params,
     _count_keys,
     _count_direct_bonus,
     _count_raw_bonus,
+    _init_mlp,
     _initial_intrinsic_state,
+    _initial_replay_state,
     _make_dqn_environment,
     _observe_intrinsic_transition,
+    _optimizer,
+    _push_replay,
     _q_loss,
+    _replay_updates,
     _rmax_action,
     _simhash_raw_bonus,
+    dqn_replay_config,
     run_dqn_training,
 )
 from rlflow_builtin.tabular.types import RunnerConfig
@@ -783,6 +791,127 @@ def test_builtin_dqn_training_accepts_train_steps() -> None:
     )
 
     assert int(result.train_lengths.sum()) == 3
+
+
+def test_dqn_replay_config_split_update_defaults_inherit_updates_per_step() -> None:
+    replay = dqn_replay_config(
+        "builtin.replay.uniform",
+        {
+            "capacity": 8,
+            "batch_size": 2,
+            "min_size": 1,
+            "updates_per_step": 4,
+            "intrinsic_updates_per_step": None,
+            "q_network_updates_per_step": None,
+        },
+    )
+
+    assert replay.intrinsic_updates_per_step == 4
+    assert replay.q_network_updates_per_step == 4
+
+    replay = dqn_replay_config(
+        "builtin.replay.uniform",
+        {
+            "capacity": 8,
+            "batch_size": 2,
+            "min_size": 1,
+            "updates_per_step": 4,
+            "intrinsic_updates_per_step": 3,
+            "q_network_updates_per_step": 2,
+        },
+    )
+
+    assert replay.intrinsic_updates_per_step == 3
+    assert replay.q_network_updates_per_step == 2
+
+
+def test_dqn_replay_updates_split_intrinsic_and_q_counts() -> None:
+    agent = _minimal_dqn_agent()
+    intrinsic = DqnIntrinsicConfig(
+        kind="rnd",
+        action_conditioning="none",
+        hidden_units=(),
+        output_dim=1,
+        learning_rate=agent.learning_rate,
+    )
+    q_optimizer = _optimizer(agent, agent.learning_rate, agent.optimizer)
+    intrinsic_optimizer = _optimizer(agent, intrinsic.learning_rate, intrinsic.optimizer)
+    q_params = _init_mlp(jax.random.PRNGKey(1), 2, agent.hidden_units, 2)
+    replay_state = _initial_replay_state(
+        capacity=4,
+        input_dim=2,
+        intrinsic_target_dim=1,
+        source_observation_shape=(),
+        source_observation_dtype="int32",
+    )
+    transitions = (
+        (
+            jnp.asarray([1.0, 0.0], dtype=jnp.float32),
+            jnp.asarray([0.0, 1.0], dtype=jnp.float32),
+            jnp.asarray(0, dtype=jnp.int32),
+            jnp.asarray(1.0, dtype=jnp.float32),
+        ),
+        (
+            jnp.asarray([0.0, 1.0], dtype=jnp.float32),
+            jnp.asarray([1.0, 0.0], dtype=jnp.float32),
+            jnp.asarray(1, dtype=jnp.int32),
+            jnp.asarray(0.0, dtype=jnp.float32),
+        ),
+    )
+    for index, (observation, next_observation, action, reward) in enumerate(transitions):
+        replay_state = _push_replay(
+            replay_state,
+            observation,
+            jnp.asarray(index, dtype=jnp.int32),
+            action,
+            reward,
+            next_observation,
+            jnp.asarray(index + 1, dtype=jnp.int32),
+            jnp.asarray(False),
+            jnp.zeros((1,), dtype=jnp.float32),
+            jnp.asarray(index, dtype=jnp.int32),
+            jnp.asarray(index + 1, dtype=jnp.int32),
+        )
+    state = DqnTrainState(
+        params=q_params,
+        target_params=_clone_params(q_params),
+        opt_state=q_optimizer.init(q_params),
+        intrinsic_state=_initial_intrinsic_state(
+            agent,
+            intrinsic,
+            input_dim=2,
+            num_actions=2,
+            key=jax.random.PRNGKey(2),
+        ),
+        replay_state=replay_state,
+        key=jax.random.PRNGKey(3),
+        global_step=jnp.asarray(0, dtype=jnp.int32),
+        gradient_step=jnp.asarray(0, dtype=jnp.int32),
+        intrinsic_gradient_step=jnp.asarray(0, dtype=jnp.int32),
+    )
+    replay = DqnReplayConfig(
+        name="builtin.replay.uniform",
+        capacity=4,
+        batch_size=2,
+        min_size=1,
+        updates_per_step=5,
+        intrinsic_updates_per_step=3,
+        q_network_updates_per_step=2,
+    )
+
+    state, loss = _replay_updates(
+        state,
+        agent,
+        replay,
+        intrinsic,
+        q_optimizer,
+        intrinsic_optimizer,
+        num_actions=2,
+    )
+
+    assert int(np.asarray(state.intrinsic_gradient_step)) == 3
+    assert int(np.asarray(state.gradient_step)) == 2
+    assert np.isfinite(np.asarray(loss))
 
 
 def _riverswim_dataset_workflow(name: str, replay_config: dict) -> WorkflowSpec:
