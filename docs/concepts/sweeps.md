@@ -36,6 +36,11 @@ Seed parameters are recognized by name, such as `seed`, `runner_seed`, or a targ
 `random`
 : Samples from `choice`, `uniform`, `loguniform`, and `int_uniform` distributions.
 
+For random sweeps, `num_trials` counts sampled non-seed hyperparameter
+assignments. Seed parameters with explicit `values` are expanded as replicates
+for every sampled assignment, so `num_trials: 100` and `seed.values: [0, 1, 2]`
+compile to 300 trials grouped into 100 non-seed configurations.
+
 ## Metrics
 
 Sweep summaries can read metrics from `summaries/metrics.json` or derive training-history metrics such as:

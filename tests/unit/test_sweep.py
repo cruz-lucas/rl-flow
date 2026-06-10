@@ -168,6 +168,58 @@ def test_sweep_compiler_writes_trial_workflows_and_slurm_array(tmp_path: Path) -
     assert workflow["metadata"]["sweep_parameters"] == {"batch": 32, "lr": 0.001}
 
 
+def test_random_sweep_expands_seed_values_for_each_sampled_configuration(tmp_path: Path) -> None:
+    spec = SweepSpec.model_validate(
+        {
+            "name": "random replicated sweep",
+            "sweep_id": "random-replicated-sweep",
+            "workflow": _tabular_workflow(),
+            "method": "random",
+            "num_trials": 2,
+            "seed": 7,
+            "parameters": {
+                "lr": {
+                    "target": "nodes.agent.config.learning_rate",
+                    "distribution": "uniform",
+                    "minimum": 0.01,
+                    "maximum": 0.1,
+                },
+                "seed": {
+                    "target": "nodes.runner.config.seed",
+                    "values": [0, 1, 2],
+                },
+            },
+        }
+    )
+
+    compilation = SweepCompiler(create_default_registry(discover=False)).compile(spec, out_dir=tmp_path)
+
+    assert len(compilation.trials) == 6
+    assert [trial.group_id for trial in compilation.trials] == [
+        "group-0000",
+        "group-0000",
+        "group-0000",
+        "group-0001",
+        "group-0001",
+        "group-0001",
+    ]
+    assert [trial.seed_value for trial in compilation.trials] == [0, 1, 2, 0, 1, 2]
+    assert {trial.parameters["lr"] for trial in compilation.trials[:3]} == {
+        compilation.trials[0].parameters["lr"]
+    }
+    assert {trial.parameters["lr"] for trial in compilation.trials[3:]} == {
+        compilation.trials[3].parameters["lr"]
+    }
+    assert compilation.trials[0].parameters["lr"] != compilation.trials[3].parameters["lr"]
+    assert Path(compilation.trials[0].run_dir).name == "seed-0"
+    assert Path(compilation.trials[2].run_dir).name == "seed-2"
+
+    workflow = yaml.safe_load(Path(compilation.trials[2].workflow_path).read_text(encoding="utf-8"))
+    runner = next(node for node in workflow["nodes"] if node["id"] == "runner")
+    assert runner["config"]["seed"] == 2
+    assert workflow["metadata"]["sweep_group_parameters"] == {"lr": compilation.trials[0].parameters["lr"]}
+
+
 def test_sweep_compiler_rejects_slurm_arrays_over_default_task_limit(tmp_path: Path) -> None:
     spec = SweepSpec.model_validate(
         {

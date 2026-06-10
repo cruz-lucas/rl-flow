@@ -13,7 +13,7 @@ Sweep schemas are Pydantic models in `rlflow.schemas.sweep`.
 | `method` | `grid` or `random` | Search strategy. |
 | `metric` | `SweepMetric` | Metric used for ranking. |
 | `parameters` | map of `SweepParameter` | Search dimensions. |
-| `num_trials` | integer or null | Random-search trial count. |
+| `num_trials` | integer or null | Random-search non-seed assignment count. |
 | `seed` | integer | Random-search seed. |
 | `execution` | `ExecutionSpec` or null | Optional backend override. |
 | `slurm` | `SweepSlurmSpec` | SLURM array controls. |

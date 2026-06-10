@@ -672,13 +672,42 @@ class SweepCompiler:
 
     def _expand_random(self, spec: SweepSpec) -> list[dict[str, Any]]:
         rng = random.Random(spec.seed)
+        sampled_parameters: list[tuple[str, SweepParameter]] = []
+        seed_replicates: list[tuple[str, list[Any]]] = []
+        for label, parameter in spec.parameters.items():
+            if self._is_seed_parameter(label) and parameter.values is not None:
+                seed_replicates.append((label, parameter.values))
+            else:
+                sampled_parameters.append((label, parameter))
+
+        if not sampled_parameters:
+            return self._expand_seed_replicates({}, seed_replicates)
+
         count = spec.num_trials or 20
+        trials: list[dict[str, Any]] = []
+        for _ in range(count):
+            sampled = {
+                label: self._sample_parameter(parameter, rng)
+                for label, parameter in sampled_parameters
+            }
+            trials.extend(self._expand_seed_replicates(sampled, seed_replicates))
+        return trials
+
+    def _expand_seed_replicates(
+        self,
+        parameters: dict[str, Any],
+        seed_replicates: list[tuple[str, list[Any]]],
+    ) -> list[dict[str, Any]]:
+        if not seed_replicates:
+            return [parameters]
+        labels = [label for label, _ in seed_replicates]
+        value_lists = [values for _, values in seed_replicates]
         return [
             {
-                label: self._sample_parameter(parameter, rng)
-                for label, parameter in spec.parameters.items()
+                **parameters,
+                **dict(zip(labels, values, strict=True)),
             }
-            for _ in range(count)
+            for values in product(*value_lists)
         ]
 
     def _sample_parameter(self, parameter: SweepParameter, rng: random.Random) -> Any:
