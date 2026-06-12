@@ -1,6 +1,6 @@
-name: navix_dqn_hparam_sweep
+name: navix_dqn_highreplay_hparam_sweep
 description: Example SLURM array sweep for Compute Canada / Alliance clusters.
-sweep_id: navix-dqn-hparam-sweep
+sweep_id: navix-dqn-highreplay-hparam-sweep
 workflow: ../workflows/16x16_emptyroom_symbolic_cardinal_cornerdistractor__dqn.yaml
 
 method: random
@@ -52,6 +52,9 @@ parameters:
   capacity:
     target: nodes.replay_buffer-3.config.capacity
     values: [8192, 16384, 32768, 65536, 131072]
+  updates_per_step:
+    target: nodes.replay_buffer-3.config.updates_per_step
+    values: [2, 5, 10, 20, 50, 100]
   seed:
     target: nodes.runner-4.config.seed
     values: [0, 1, 2]
