@@ -1,0 +1,100 @@
+description: ''
+edges:
+- from_node: agent-1
+  from_port: agent
+  to_node: runner-4
+  to_port: agent
+- from_node: environment-2
+  from_port: environment
+  to_node: runner-4
+  to_port: environment
+- from_node: replay_buffer-3
+  from_port: replay_buffer
+  to_node: runner-4
+  to_port: replay_buffer
+execution:
+  backend: slurm
+  cluster: null
+  options: {}
+metadata:
+  experiment_id: 16x16-emptyroom-symbolic-cardinal-cornerdistractor--dqn-20260604-022550-d0c87613
+name: 16x16_emptyroom_symbolic_cardinal_cornerdistractor__dqn
+nodes:
+- component: builtin.agent.dqn_jax
+  config:
+    activation: relu
+    discount: 0.99
+    double_q: false
+    eps_decay_steps: 200000
+    eps_end: 0.01
+    eps_start: 1
+    epsilon_decay_steps: 200000
+    epsilon_end: 0.001
+    epsilon_start: 1
+    eval_epsilon: 0
+    hidden_dims: null
+    hidden_units:
+    - 128
+    - 128
+    huber_delta: 1
+    learning_rate: 1.2514006814076102e-05
+    loss_type: mse
+    max_grad_norm: 10
+    normalization: last
+    normalize_observations: true
+    obs_normalization_clip: 5
+    obs_normalization_epsilon: 1.0e-08
+    optimizer: adam
+    optimizer_beta1: 0.9
+    optimizer_beta2: 0.999
+    optimizer_centered: false
+    optimizer_decay: 0.95
+    optimizer_epsilon: 1.0e-08
+    optimizer_momentum: 0
+    optimizer_weight_decay: 0
+    seed: 0
+    target_update_freq: 512
+    target_update_frequency: 512
+    update_frequency: 1
+  id: agent-1
+  position:
+    x: 211.80511148533765
+    y: 69.90927454282391
+- component: navix.env.grid
+  config:
+    action_set: cardinal
+    env_name: empty_room
+    layout: fixed
+    max_steps: 100
+    observation_mode: symbolic
+    size: 16
+    symbolic_distractor: corner_wall_color
+  id: environment-2
+  position:
+    x: 208.04839268518253
+    y: 213.09072545717612
+- component: builtin.replay.uniform
+  config:
+    batch_size: 2048
+    capacity: 131072
+    min_size: 2048
+    save_dataset_path: ''
+    updates_per_step: 1
+  id: replay_buffer-3
+  position:
+    x: 207.3071314564006
+    y: 351.24432262758324
+- component: builtin.runner.tabular_jax
+  config:
+    checkpoint_dir: checkpoints
+    checkpoint_freq: null
+    eval_episodes: 0
+    max_episode_steps: 100
+    save_final_checkpoint: false
+    seed: 0
+    train_episodes: 10000
+    train_steps: 1000000
+  id: runner-4
+  position:
+    x: 531.6496612336134
+    y: 93.46329889898027

@@ -44,11 +44,11 @@ nodes:
     y: 187.27359897803342
 - component: builtin.replay.uniform
   config:
-    batch_size: 256
-    capacity: 50000
+    batch_size: 64
+    capacity: 8192
     min_size: 4096
     save_dataset_path: ''
-    updates_per_step: 10
+    updates_per_step: 20
   id: replay_buffer-3
   position:
     x: 174.93341438687742
@@ -80,10 +80,10 @@ nodes:
     - 128
     - 128
     huber_delta: 1
-    learning_rate: 0.0003
+    learning_rate: 1.87572628467282e-05
     loss_type: mse
     max_grad_norm: 10
-    normalize_observations: false
+    normalize_observations: true
     obs_normalization_clip: 5
     obs_normalization_epsilon: 1.0e-08
     optimizer: adam
@@ -94,12 +94,12 @@ nodes:
     optimizer_epsilon: 1.0e-08
     optimizer_momentum: 0
     optimizer_weight_decay: 0
-    rmax_bonus_threshold: 0.5
+    rmax_bonus_threshold: 0.9
     rmax_decision_v_max: 5
-    rmax_update_v_max: 1
+    rmax_update_v_max: 0.5
     rmax_v_max: 1
     seed: 0
-    target_update_frequency: 512
+    target_update_frequency: 128
     update_frequency: 1
   id: agent-1
   position:
@@ -111,8 +111,8 @@ nodes:
     count_activation: null
     count_bonus_exponent: 0.5
     count_hidden_units: null
-    count_ignore_empty_room_distractor: false
-    count_key_mode: dense_exact
+    count_ignore_empty_room_distractor: true
+    count_key_mode: oracle_tabular
     count_learning_rate: null
     count_min_count: 1
     count_optimizer: null
