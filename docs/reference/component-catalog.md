@@ -590,7 +590,9 @@ None.
 | --- | --- | --- | --- | --- |
 | `batch_size` | `integer` | no | `32` |  |
 | `capacity` | `integer` | no | `10000` |  |
+| `intrinsic_updates_per_step` | `integer | null` | no | `None` |  |
 | `min_size` | `integer` | no | `500` |  |
+| `q_network_updates_per_step` | `integer | null` | no | `None` |  |
 | `save_dataset_path` | `string` | no |  |  |
 | `updates_per_step` | `integer` | no | `1` |  |
 
@@ -637,7 +639,7 @@ JAX runner for builtin tabular agents and DQN-family agents.
 **Source:** `navix`  
 **Version:** `0.1.0`
 
-Navix EmptyRoom and DoorKey tasks with symbolic, RGB, tabular, one-hot, or one-hot feature observations.
+Navix EmptyRoom, DoorKey, and FourRooms tasks with symbolic, RGB, tabular, one-hot, or one-hot feature observations.
 
 ### Input Ports
 
@@ -654,9 +656,9 @@ None.
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `action_set` | `string` | no | `default` |  |
-| `env_name` | `string` | no | `empty_room` |  |
+| `env_name` | `string` | no | `empty_room` | Navix task: empty_room, doorkey, or four_rooms. |
 | `layout` | `string` | no | `fixed` |  |
 | `max_steps` | `integer | null` | no | `None` |  |
 | `observation_mode` | `string` | no | `tabular` |  |
-| `size` | `integer` | no | `5` |  |
+| `size` | `integer` | no | `5` | Grid side length. FourRooms requires 19. |
 | `symbolic_distractor` | `string` | no | `none` |  |
