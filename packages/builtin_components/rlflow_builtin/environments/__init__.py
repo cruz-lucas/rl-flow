@@ -13,12 +13,20 @@ def environment_components() -> list[ComponentSpec]:
             source="navix",
             kind="environment",
             display_name="Navix Grid Environment",
-            description="Navix EmptyRoom and DoorKey tasks with symbolic, RGB, tabular, one-hot, or one-hot feature observations.",
+            description="Navix EmptyRoom, DoorKey, and FourRooms tasks with symbolic, RGB, tabular, one-hot, or one-hot feature observations.",
             output_ports=output,
             config_schema=component_schema(
                 {
-                    "env_name": {"type": "string", "enum": ["empty_room", "doorkey"]},
-                    "size": {"type": "integer", "enum": [5, 6, 8, 16]},
+                    "env_name": {
+                        "type": "string",
+                        "enum": ["empty_room", "doorkey", "four_rooms"],
+                        "description": "Navix task: empty_room, doorkey, or four_rooms.",
+                    },
+                    "size": {
+                        "type": "integer",
+                        "enum": [5, 6, 8, 16, 19],
+                        "description": "Grid side length. FourRooms requires 19.",
+                    },
                     "layout": {"type": "string", "enum": ["fixed", "random", "layout1", "layout2", "layout3"]},
                     "observation_mode": {
                         "type": "string",
