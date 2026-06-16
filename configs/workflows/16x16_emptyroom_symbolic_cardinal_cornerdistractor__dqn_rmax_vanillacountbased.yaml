@@ -26,8 +26,8 @@ execution:
     modules:
       - python/3.11
 metadata:
-  experiment_id: 16x16-emptyroom-symbolic-cardinal-cornerdistractor--dqn-rmax-cfn-20260527-160728-7a09ee92
-name: 16x16_emptyroom_symbolic_cardinal_cornerdistractor__dqn_rmax_cfn
+  experiment_id: 16x16-emptyroom-symbolic-cardinal-cornerdistractor--dqn-rmax-countbasedoracle-20260529-194128-67fb89a4
+name: 16x16_emptyroom_symbolic_cardinal_cornerdistractor__dqn_rmax_countbasedoracle
 nodes:
 - component: navix.env.grid
   config:
@@ -46,15 +46,13 @@ nodes:
   config:
     batch_size: 256
     capacity: 50000
-    min_size: 2048
+    min_size: 4096
     save_dataset_path: ''
-    updates_per_step: 1
-    intrinsic_updates_per_step: 10
-    q_network_updates_per_step: 10
+    updates_per_step: 10
   id: replay_buffer-3
   position:
-    x: 174.2082513549356
-    y: 339.3287257910558
+    x: 174.93341438687742
+    y: 338.603562759114
 - component: builtin.runner.tabular_jax
   config:
     checkpoint_dir: checkpoints
@@ -69,34 +67,6 @@ nodes:
   position:
     x: 530.5
     y: 93.46329889898027
-- component: builtin.intrinsic.cfn
-  config:
-    cfn_action_conditioning: pair
-    cfn_activation: gelu
-    cfn_bonus_exponent: 0.5
-    cfn_final_tanh: false
-    cfn_hidden_units:
-    - 128
-    - 128
-    cfn_learning_rate: 0.001
-    cfn_optimizer: null
-    cfn_output_dim: 128
-    cfn_prior_scale: 1
-    cfn_update_period: 1
-    cfn_use_random_prior: true
-    debug: false
-    debug_compact_observations: true
-    debug_log_dir: tmp/debug_logs
-    debug_log_to_mlflow: true
-    intrinsic_reward_center: false
-    intrinsic_reward_clip: 100
-    intrinsic_reward_epsilon: 1
-    intrinsic_reward_scale: 1
-    intrinsic_stats_decay: 0.9
-  id: intrinsic_reward-5
-  position:
-    x: 205.80263690633404
-    y: 523.7480633766304
 - component: builtin.agent.dqn_rmax_jax
   config:
     activation: relu
@@ -135,3 +105,29 @@ nodes:
   position:
     x: 173.36573440689835
     y: 24.616951446538593
+- component: builtin.intrinsic.count
+  config:
+    count_action_conditioning: input
+    count_activation: null
+    count_bonus_exponent: 0.5
+    count_hidden_units: null
+    count_ignore_empty_room_distractor: false
+    count_key_mode: oracle_tabular
+    count_learning_rate: null
+    count_min_count: 1
+    count_optimizer: null
+    count_table_overflow: error
+    count_table_size: 0
+    debug: false
+    debug_compact_observations: true
+    debug_log_dir: tmp/debug_logs
+    debug_log_to_mlflow: true
+    intrinsic_reward_center: false
+    intrinsic_reward_clip: 10
+    intrinsic_reward_epsilon: 0.0001
+    intrinsic_reward_scale: 1
+    intrinsic_stats_decay: 1
+  id: intrinsic_reward-5
+  position:
+    x: 213.36011265426498
+    y: 510.5641921190885

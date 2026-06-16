@@ -17,9 +17,14 @@ edges:
   to_node: runner-4
   to_port: intrinsic_reward
 execution:
-  backend: local
-  cluster: null
-  options: {}
+  backend: slurm
+  options:
+    account: aip-machado
+    time: "03:00:00"
+    cpus_per_task: 4
+    mem: 16G
+    modules:
+      - python/3.11
 metadata:
   experiment_id: 16x16-emptyroom-symbolic-cardinal-cornerdistractor--dqn-rmax-countbasedoracle-20260529-194128-67fb89a4
 name: 16x16_emptyroom_symbolic_cardinal_cornerdistractor__dqn_rmax_countbasedoracle
@@ -43,7 +48,7 @@ nodes:
     capacity: 50000
     min_size: 4096
     save_dataset_path: ''
-    updates_per_step: 1
+    updates_per_step: 10
   id: replay_buffer-3
   position:
     x: 174.93341438687742
