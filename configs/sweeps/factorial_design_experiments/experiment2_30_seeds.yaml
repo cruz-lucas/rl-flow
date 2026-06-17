@@ -1,0 +1,20 @@
+name: factorial_design_experiments__experiment2_30_seeds
+description: Run 30 seed replicates for factorial design experiment2.
+sweep_id: factorial-design-experiments-experiment2-30-seeds
+workflow: ../../workflows/factorial_design_experiments/experiment2.yaml
+
+method: grid
+
+metric:
+  goal: maximize
+  name: mean_train_return
+
+slurm:
+  max_parallel: 30
+  trials_per_task: 1
+  max_array_tasks: 1000
+
+parameters:
+  seed:
+    target: nodes.runner-4.config.seed
+    values: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]
