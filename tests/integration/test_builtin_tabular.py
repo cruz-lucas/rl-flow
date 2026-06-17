@@ -195,6 +195,70 @@ def test_builtin_tabular_q_learning_navix_empty_room_runs(tmp_path: Path) -> Non
     assert metrics["mean_eval_return"] is not None
 
 
+def test_builtin_tabular_q_learning_navix_four_rooms_runs(tmp_path: Path) -> None:
+    workflow = WorkflowSpec.model_validate(
+        {
+            "name": "tabular_q_learning_navix_four_rooms",
+            "nodes": [
+                {
+                    "id": "env",
+                    "component": "navix.env.grid",
+                    "position": {"x": 0, "y": 0},
+                    "config": {
+                        "env_name": "four_rooms",
+                        "size": 19,
+                        "layout": "fixed",
+                        "observation_mode": "tabular",
+                        "action_set": "cardinal",
+                        "max_steps": 20,
+                    },
+                },
+                {
+                    "id": "agent",
+                    "component": "builtin.agent.q_learning_tabular",
+                    "position": {"x": 0, "y": 100},
+                    "config": {"learning_rate": 0.1, "discount": 0.99, "initial_q": 0.0},
+                },
+                {
+                    "id": "policy",
+                    "component": "builtin.policy.epsilon_greedy",
+                    "position": {"x": 0, "y": 200},
+                    "config": {"epsilon": 0.1, "eval_epsilon": 0.0},
+                },
+                {
+                    "id": "runner",
+                    "component": "builtin.runner.tabular_jax",
+                    "position": {"x": 300, "y": 100},
+                    "config": {
+                        "seed": 0,
+                        "train_episodes": 1,
+                        "max_episode_steps": 4,
+                        "eval_episodes": 1,
+                        "checkpoint_freq": None,
+                        "checkpoint_dir": "checkpoints",
+                        "save_final_checkpoint": False,
+                    },
+                },
+            ],
+            "edges": [
+                {"from_node": "env", "from_port": "environment", "to_node": "runner", "to_port": "environment"},
+                {"from_node": "agent", "from_port": "agent", "to_node": "runner", "to_port": "agent"},
+                {"from_node": "policy", "from_port": "policy", "to_node": "runner", "to_port": "policy"},
+            ],
+        }
+    )
+
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+
+    subprocess.run(["bash", experiment.command], check=True)
+
+    q_table = np.load(tmp_path / "q_table.npy")
+    metrics = json.loads((tmp_path / "metrics.json").read_text(encoding="utf-8"))
+    assert q_table.shape == (289, 4)
+    assert metrics["environment"] == "navix.env.grid"
+    assert metrics["mean_eval_return"] is not None
+
+
 def test_builtin_tabular_replay_dataset_can_be_saved_and_loaded_for_offline_rl(tmp_path: Path) -> None:
     collector = _riverswim_dataset_workflow(
         name="collect_riverswim_dataset",
@@ -388,6 +452,26 @@ def test_builtin_dqn_navix_exposes_oracle_tabular_state_ids() -> None:
 
     assert env.oracle_state_id is not None
     assert env.oracle_state_space_size == 9
+    assert int(np.asarray(env.oracle_state_id(timestep))) == 0
+
+
+def test_builtin_dqn_navix_four_rooms_exposes_oracle_tabular_state_ids() -> None:
+    env = _make_dqn_environment(
+        "navix.env.grid",
+        {
+            "env_name": "four_rooms",
+            "size": 19,
+            "layout": "fixed",
+            "observation_mode": "symbolic",
+            "action_set": "cardinal",
+            "max_steps": 20,
+            "symbolic_distractor": "corner_wall_color",
+        },
+    )
+    timestep = env.reset(jax.random.PRNGKey(0))
+
+    assert env.oracle_state_id is not None
+    assert env.oracle_state_space_size == 289
     assert int(np.asarray(env.oracle_state_id(timestep))) == 0
 
 

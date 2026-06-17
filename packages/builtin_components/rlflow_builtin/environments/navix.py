@@ -15,10 +15,10 @@ from navix import actions, observations, rewards, terminations
 from navix.actions import _can_walk_there
 from navix.components import EMPTY_POCKET_ID
 from navix.entities import Door, Goal, Key, Player, Wall
-from navix.environments import DoorKey
+from navix.environments import DoorKey, FourRooms
 from navix.environments.environment import Timestep
 from navix.environments.empty import Room as EmptyRoom
-from navix.grid import room, translate
+from navix.grid import horizontal_wall, room, translate, vertical_wall
 from navix.rendering.cache import RenderingCache
 from navix.rendering.registry import PALETTE
 from navix.spaces import Discrete, Space
@@ -30,7 +30,7 @@ except ImportError:  # pragma: no cover - Gin is optional for generated configs.
     gin = None
 
 
-NavixEnvName = Literal["empty_room", "doorkey"]
+NavixEnvName = Literal["empty_room", "doorkey", "four_rooms"]
 NavixLayout = Literal["fixed", "random", "layout1", "layout2", "layout3"]
 NavixObservationMode = Literal["tabular", "one_hot", "state_features", "symbolic", "rgb"]
 NavixActionSet = Literal["default", "cardinal"]
@@ -41,7 +41,9 @@ NavixSymbolicDistractor = Literal[
     "independent_wall_color",
 ]
 
-SUPPORTED_SIZES = (5, 6, 8, 16)
+SUPPORTED_SIZES = (5, 6, 8, 16, 19)
+DOORKEY_SIZES = (5, 6, 8, 16)
+FOUR_ROOMS_SIZE = 19
 FIXED_DOORKEY_LAYOUTS: dict[int, dict[str, dict[str, int]]] = {
     5: {
         "layout1": {"door_row": 1, "door_col": 2, "key_row": 2, "key_col": 1, "goal_row": 1, "goal_col": 3},
@@ -177,6 +179,46 @@ class FixedLayoutDoorKey(DoorKey):
         )
 
 
+class FixedLayoutFourRooms(FourRooms):
+    def _reset(self, key: Array, cache: RenderingCache | None = None) -> Timestep:
+        key, _unused = jax.random.split(key)
+        grid = room(height=self.height, width=self.width)
+
+        openings = jnp.asarray([4, 14], dtype=jnp.int32)
+        wall_pos_vert = vertical_wall(grid, 9, openings)
+        wall_pos_hor = horizontal_wall(grid, 9, openings)
+        walls = Wall.create(position=jnp.concatenate([wall_pos_vert, wall_pos_hor], axis=0))
+
+        player = Player.create(
+            position=jnp.asarray([1, 1], dtype=jnp.int32),
+            direction=jnp.asarray(0, dtype=jnp.int32),
+            pocket=EMPTY_POCKET_ID,
+        )
+        goal = Goal.create(
+            position=jnp.asarray([17, 17], dtype=jnp.int32),
+            probability=jnp.asarray(1.0),
+        )
+
+        state = State(
+            key=key,
+            grid=grid,
+            cache=cache or RenderingCache.init(grid),
+            entities={
+                "player": player[None],
+                "goal": goal[None],
+                "wall": walls,
+            },
+        )
+        return Timestep(
+            t=jnp.asarray(0, dtype=jnp.int32),
+            observation=self.observation_fn(state),
+            action=jnp.asarray(0, dtype=jnp.int32),
+            reward=jnp.asarray(0.0, dtype=jnp.float32),
+            step_type=jnp.asarray(0, dtype=jnp.int32),
+            state=state,
+        )
+
+
 def create_navix_environment(
     env_name: NavixEnvName = "empty_room",
     size: int = 5,
@@ -214,6 +256,13 @@ def create_navix_environment(
             height=size,
             width=size,
             random_start=spec.layout == "random",
+            **kwargs,
+        )
+    elif spec.env_name == "four_rooms":
+        env_cls = FixedLayoutFourRooms if spec.layout == "fixed" else FourRooms
+        env = env_cls.create(
+            height=size,
+            width=size,
             **kwargs,
         )
     elif spec.fixed_layout:
@@ -292,8 +341,8 @@ def _validate_spec(
     action_set: str,
     symbolic_distractor: str,
 ) -> NavixSpec:
-    if env_name not in {"empty_room", "doorkey"}:
-        raise ValueError("Navix env_name must be 'empty_room' or 'doorkey'")
+    if env_name not in {"empty_room", "doorkey", "four_rooms"}:
+        raise ValueError("Navix env_name must be 'empty_room', 'doorkey', or 'four_rooms'")
     if size not in SUPPORTED_SIZES:
         raise ValueError(f"Navix size must be one of {SUPPORTED_SIZES}")
     if layout not in {"fixed", "random", "layout1", "layout2", "layout3"}:
@@ -309,18 +358,25 @@ def _validate_spec(
         "independent_wall_color",
     }:
         raise ValueError("Unsupported Navix symbolic_distractor")
-    if symbolic_distractor != "none" and env_name != "empty_room":
-        raise ValueError("Symbolic distractors are only supported for empty_room")
+    if symbolic_distractor != "none" and env_name not in {"empty_room", "four_rooms"}:
+        raise ValueError("Symbolic distractors are only supported for empty_room and four_rooms")
     if symbolic_distractor != "none" and observation_mode != "symbolic":
         raise ValueError("Symbolic distractors require observation_mode='symbolic'")
     if env_name == "doorkey" and action_set == "cardinal":
-        raise ValueError("The cardinal action set is only supported for empty_room")
+        raise ValueError("The cardinal action set is only supported for empty_room and four_rooms")
     if env_name == "empty_room" and layout in {"layout1", "layout2", "layout3"}:
         raise ValueError("Empty-room Navix layouts are fixed or random")
+    if env_name == "four_rooms":
+        if size != FOUR_ROOMS_SIZE:
+            raise ValueError("FourRooms Navix is currently available as 19x19 only")
+        if layout in {"layout1", "layout2", "layout3"}:
+            raise ValueError("FourRooms Navix layouts are fixed or random")
     if env_name == "doorkey" and layout != "random":
         layout_name = "layout1" if layout == "fixed" else layout
         if size not in FIXED_DOORKEY_LAYOUTS or layout_name not in FIXED_DOORKEY_LAYOUTS[size]:
             raise ValueError("Fixed DoorKey layouts are currently available for 5x5 and 16x16 only")
+    if env_name == "doorkey" and size not in DOORKEY_SIZES:
+        raise ValueError(f"DoorKey Navix size must be one of {DOORKEY_SIZES}")
     return NavixSpec(
         env_name=env_name,  # type: ignore[arg-type]
         height=size,
@@ -399,7 +455,7 @@ class FreshKeyObservationEnv:
 
 def symbolic_distractor_observation(state: State, *, mode: NavixSymbolicDistractor) -> Array:
     obs = observations.symbolic(state)
-    wall_mask = state.grid == -1
+    wall_mask = obs[..., 0] == 2
     if mode == "corner_wall_color":
         value = jax.random.randint(state.key, (), 0, 256, dtype=jnp.uint8)
         return obs.at[0, -1, 1].set(value)
@@ -411,7 +467,7 @@ def symbolic_distractor_observation(state: State, *, mode: NavixSymbolicDistract
 
 
 def tabular_observation(state: State, *, spec: NavixSpec) -> Array:
-    if spec.env_name == "empty_room":
+    if spec.env_name in {"empty_room", "four_rooms"}:
         player = state.get_player(idx=0)
         index = _position_index(player.position, spec)
         if spec.uses_direction:
@@ -425,7 +481,7 @@ def one_hot_observation(state: State, *, spec: NavixSpec) -> Array:
 
 
 def state_features_observation(state: State, *, spec: NavixSpec) -> Array:
-    if spec.env_name == "empty_room":
+    if spec.env_name in {"empty_room", "four_rooms"}:
         player = state.get_player(idx=0)
         features = [jax.nn.one_hot(_position_index(player.position, spec), spec.inner_states, dtype=jnp.float32)]
         if spec.uses_direction:
@@ -471,7 +527,7 @@ def _key_index(position: Array, spec: NavixSpec) -> Array:
 
 
 def _state_space_size(spec: NavixSpec) -> int:
-    if spec.env_name == "empty_room":
+    if spec.env_name in {"empty_room", "four_rooms"}:
         return spec.inner_states * (4 if spec.uses_direction else 1)
     size = (spec.inner_states + 1) * spec.inner_states * 2 * 4
     if not spec.fixed_layout:
@@ -480,7 +536,7 @@ def _state_space_size(spec: NavixSpec) -> int:
 
 
 def _feature_size(spec: NavixSpec) -> int:
-    if spec.env_name == "empty_room":
+    if spec.env_name in {"empty_room", "four_rooms"}:
         return spec.inner_states + (4 if spec.uses_direction else 0)
     size = spec.inner_states + (spec.inner_states + 1) + 2 + 4
     if not spec.fixed_layout:
