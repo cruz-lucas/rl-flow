@@ -29,6 +29,7 @@ from rlflow_builtin.dqn.training import (
     _q_loss,
     _replay_updates,
     _rmax_action,
+    _select_action,
     _simhash_raw_bonus,
     dqn_replay_config,
     run_dqn_training,
@@ -781,6 +782,73 @@ def test_rmax_breaks_ties_randomly() -> None:
     assert len(actions) > 1
 
 
+def test_dqn_select_action_breaks_q_value_ties_randomly() -> None:
+    agent = _minimal_dqn_agent()
+    intrinsic = DqnIntrinsicConfig()
+    state = _initial_intrinsic_state(
+        agent,
+        intrinsic,
+        input_dim=2,
+        num_actions=3,
+        key=jax.random.PRNGKey(0),
+    )
+    params = ({"w": jnp.zeros((2, 3), dtype=jnp.float32), "b": jnp.zeros((3,), dtype=jnp.float32)},)
+    actions = {
+        int(
+            np.asarray(
+                _select_action(
+                    agent,
+                    params,
+                    state,
+                    intrinsic,
+                    jnp.asarray([1.0, 0.0], dtype=jnp.float32),
+                    jax.random.PRNGKey(seed),
+                    3,
+                    jnp.asarray(0, dtype=jnp.int32),
+                    training=True,
+                )
+            )
+        )
+        for seed in range(20)
+    }
+
+    assert len(actions) > 1
+
+
+def test_double_dqn_target_breaks_q_value_ties_randomly() -> None:
+    base_agent = _minimal_dqn_agent()
+    agent = DqnAgentConfig(**{**base_agent.__dict__, "double_q": True, "discount": 1.0})
+    params = ({"w": jnp.zeros((2, 3), dtype=jnp.float32), "b": jnp.zeros((3,), dtype=jnp.float32)},)
+    target_params = (
+        {
+            "w": jnp.zeros((2, 3), dtype=jnp.float32),
+            "b": jnp.asarray([1.0, 2.0, 3.0], dtype=jnp.float32),
+        },
+    )
+    losses = {
+        float(
+            np.asarray(
+                _q_loss(
+                    agent,
+                    params,
+                    target_params,
+                    observations=jnp.asarray([[1.0, 0.0]], dtype=jnp.float32),
+                    actions=jnp.asarray([0], dtype=jnp.int32),
+                    rewards=jnp.asarray([0.0], dtype=jnp.float32),
+                    next_observations=jnp.asarray([[1.0, 0.0]], dtype=jnp.float32),
+                    terminals=jnp.asarray([0.0], dtype=jnp.float32),
+                    known_mask=jnp.asarray([True]),
+                    next_unknown_any=jnp.asarray([False]),
+                    key=jax.random.PRNGKey(seed),
+                )
+            )
+        )
+        for seed in range(20)
+    }
+
+    assert len(losses) > 1
+
+
 def test_rmax_uses_separate_decision_and_update_v_max() -> None:
     agent = _minimal_dqn_agent(algorithm="dqn_rmax")
     agent = DqnAgentConfig(
@@ -836,8 +904,86 @@ def test_rmax_uses_separate_decision_and_update_v_max() -> None:
         terminals=jnp.asarray([0.0], dtype=jnp.float32),
         known_mask=jnp.asarray([True]),
         next_unknown_any=jnp.asarray([True]),
+        key=jax.random.PRNGKey(0),
     )
     np.testing.assert_allclose(np.asarray(loss), 49.0)
+
+
+def test_rmax_select_action_uses_epsilon_greedy_with_rmax_greedy_action() -> None:
+    base_agent = _minimal_dqn_agent(algorithm="dqn_rmax")
+    agent = DqnAgentConfig(
+        **{
+            **base_agent.__dict__,
+            "epsilon_start": 1.0,
+            "epsilon_end": 1.0,
+            "epsilon_decay_steps": 1,
+            "rmax_decision_v_max": 5.0,
+        }
+    )
+    intrinsic = DqnIntrinsicConfig(
+        kind="count",
+        action_conditioning="input",
+        count_table_size=8,
+        count_bonus_exponent=1.0,
+        count_min_count=1.0,
+    )
+    state = _initial_intrinsic_state(
+        agent,
+        intrinsic,
+        input_dim=2,
+        num_actions=3,
+        key=jax.random.PRNGKey(0),
+    )
+    observation = jnp.asarray([1.0, 0.0], dtype=jnp.float32)
+    for action in (0, 2):
+        for _ in range(4):
+            state = _observe_intrinsic_transition(
+                state,
+                observation,
+                jnp.asarray(action, dtype=jnp.int32),
+                intrinsic,
+                3,
+            )
+
+    params = (
+        {
+            "w": jnp.zeros((2, 3), dtype=jnp.float32),
+            "b": jnp.asarray([0.0, 2.0, 3.0], dtype=jnp.float32),
+        },
+    )
+    greedy_agent = DqnAgentConfig(
+        **{
+            **agent.__dict__,
+            "epsilon_start": 0.0,
+            "epsilon_end": 0.0,
+        }
+    )
+
+    greedy_action = _select_action(
+        greedy_agent,
+        params,
+        state,
+        intrinsic,
+        observation,
+        jax.random.PRNGKey(0),
+        3,
+        jnp.asarray(0, dtype=jnp.int32),
+        training=True,
+    )
+    exploratory_action = _select_action(
+        agent,
+        params,
+        state,
+        intrinsic,
+        observation,
+        jax.random.PRNGKey(4),
+        3,
+        jnp.asarray(0, dtype=jnp.int32),
+        training=True,
+    )
+
+    assert int(np.asarray(greedy_action)) == 1
+    assert int(np.asarray(exploratory_action)) == 0
 
 
 def test_builtin_dqn_training_accepts_train_steps() -> None:

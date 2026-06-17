@@ -1060,6 +1060,7 @@ def _replay_updates(
     def q_update_step(carry, _):
         train_state, loss_sum = carry
         key, sample_key = jax.random.split(train_state.key)
+        q_loss_key, key = jax.random.split(key)
         batch = _sample_replay(train_state.replay_state, sample_key, replay.batch_size)
         train_state = train_state._replace(key=key)
         train_state, loss = _q_update_from_batch(
@@ -1069,6 +1070,7 @@ def _replay_updates(
             intrinsic,
             q_optimizer,
             num_actions,
+            q_loss_key,
         )
         return (train_state, loss_sum + loss), loss
 
@@ -1133,6 +1135,7 @@ def _q_update_from_batch(
     intrinsic: DqnIntrinsicConfig,
     q_optimizer: optax.GradientTransformation,
     num_actions: int,
+    key: jax.Array,
 ) -> tuple[DqnTrainState, jax.Array]:
     observations = batch["observations"]
     actions = batch["actions"]
@@ -1172,6 +1175,7 @@ def _q_update_from_batch(
             terminals,
             rmax_known_mask,
             rmax_next_unknown,
+            key,
         )
 
     q_loss, q_grads = jax.value_and_grad(q_loss_fn)(state.params)
@@ -2017,12 +2021,13 @@ def _q_loss(
     terminals: jax.Array,
     known_mask: jax.Array,
     next_unknown_any: jax.Array,
+    key: jax.Array,
 ) -> jax.Array:
     q_values = _apply_mlp(params, observations, agent.activation)
     selected_q = jnp.take_along_axis(q_values, actions[:, None], axis=1).squeeze(-1)
     if agent.double_q:
         next_online_q = _apply_mlp(params, next_observations, agent.activation)
-        next_actions = jnp.argmax(jax.lax.stop_gradient(next_online_q), axis=1, keepdims=True)
+        next_actions = _max_actions(jax.lax.stop_gradient(next_online_q), key)[:, None]
         next_target_q = _apply_mlp(target_params, next_observations, agent.activation)
         next_q = jnp.take_along_axis(next_target_q, next_actions, axis=1).squeeze(-1)
     else:
@@ -2198,17 +2203,12 @@ def _epsilon(
 
 
 def _epsilon_greedy_action(
-    params,
-    observation: jax.Array,
-    key: jax.Array,
+    greedy_action: jax.Array,
+    random_key: jax.Array,
+    choice_key: jax.Array,
     epsilon: jax.Array,
     num_actions: int,
-    activation: str,
 ) -> jax.Array:
-    greedy_key, random_key, choice_key = jax.random.split(key, 3)
-    del greedy_key
-    q_values = _apply_mlp(params, observation[None, :], activation).squeeze(0)
-    greedy_action = jnp.argmax(q_values).astype(jnp.int32)
     random_action = jax.random.randint(random_key, (), 0, num_actions, dtype=jnp.int32)
     explore = jax.random.uniform(choice_key) < epsilon
     return jnp.where(explore, random_action, greedy_action).astype(jnp.int32)
@@ -2227,17 +2227,6 @@ def _select_action(
     training: bool,
     state_id: jax.Array | None = None,
 ) -> jax.Array:
-    if agent.algorithm == "dqn_rmax":
-        return _rmax_action(
-            agent,
-            params,
-            intrinsic_state,
-            intrinsic,
-            observation,
-            key,
-            num_actions,
-            state_id=state_id,
-        )
     epsilon = (
         _epsilon(
             global_step,
@@ -2248,13 +2237,33 @@ def _select_action(
         if training
         else jnp.asarray(agent.eval_epsilon, dtype=jnp.float32)
     )
+    greedy_key, random_key, choice_key = jax.random.split(key, 3)
+    if agent.algorithm == "dqn_rmax":
+        greedy_action = _rmax_action(
+            agent,
+            params,
+            intrinsic_state,
+            intrinsic,
+            observation,
+            greedy_key,
+            num_actions,
+            state_id=state_id,
+        )
+        return _epsilon_greedy_action(
+            greedy_action,
+            random_key,
+            choice_key,
+            epsilon,
+            num_actions,
+        )
+    q_values = _apply_mlp(params, observation[None, :], agent.activation).squeeze(0)
+    greedy_action = _max_action(q_values, greedy_key)
     return _epsilon_greedy_action(
-        params,
-        observation,
-        key,
+        greedy_action,
+        random_key,
+        choice_key,
         epsilon,
         num_actions,
-        agent.activation,
     )
 
 
@@ -2290,12 +2299,21 @@ def _rmax_action(
         agent.rmax_decision_v_max,
         q_values,
     )
-    max_value = jnp.max(optimistic_values)
-    ties = optimistic_values == max_value
+    return _max_action(optimistic_values, key)
+
+
+def _max_action(values: jax.Array, key: jax.Array) -> jax.Array:
+    max_value = jnp.max(values)
+    ties = values == max_value
     tie_count = jnp.sum(ties.astype(jnp.int32))
     selected_tie = jax.random.randint(key, (), 0, tie_count, dtype=jnp.int32)
     tie_offsets = jnp.cumsum(ties.astype(jnp.int32)) - 1
     return jnp.argmax(jnp.logical_and(ties, tie_offsets == selected_tie)).astype(jnp.int32)
+
+
+def _max_actions(values: jax.Array, key: jax.Array) -> jax.Array:
+    keys = jax.random.split(key, values.shape[0])
+    return jax.vmap(_max_action)(values, keys).astype(jnp.int32)
 
 
 def _rmax_batch_masks(

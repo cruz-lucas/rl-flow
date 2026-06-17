@@ -245,16 +245,13 @@ def _dqn_defaults() -> dict:
 
 
 def _dqn_rmax_properties() -> dict:
-    properties = {
+    return {
         **_dqn_properties(),
         "rmax_bonus_threshold": {"type": "number", "minimum": 0.0},
         "rmax_decision_v_max": {"type": "number"},
         "rmax_update_v_max": {"type": "number"},
         "rmax_v_max": _hidden_property({"type": "number", "deprecated": True}),
     }
-    for key in ("epsilon_start", "epsilon_end", "epsilon_decay_steps", "eval_epsilon"):
-        properties[key] = _hidden_property(properties[key])
-    return properties
 
 
 def _dqn_rmax_defaults() -> dict:
