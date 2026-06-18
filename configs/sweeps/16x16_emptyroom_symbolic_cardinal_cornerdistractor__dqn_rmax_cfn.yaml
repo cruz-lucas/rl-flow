@@ -1,10 +1,10 @@
 name: navix_dqn_rmax_cfn_hparam_sweep
 description: Example SLURM array sweep for Compute Canada / Alliance clusters.
 sweep_id: navix-dqn-rmax-cfn-hparam-sweep
-workflow: ../workflows/16x16_emptyroom_symbolic_cardinal_cornerdistractor__dqn_rmax_cfn.yaml
+workflow: ../workflows/empty_room/16x16/corner_distractor/dqn_rmax_cfn.yaml
 method: random
 num_trials: 200
-seed: 0
+seed: 42
 
 metric:
   goal: maximize
@@ -14,7 +14,7 @@ execution:
   backend: slurm
   options:
     account: aip-machado
-    time: "03:00:00"
+    time: "08:00:00"
     cpus_per_task: 2
     gpus: l40s.4:1
     mem: 4G
@@ -41,7 +41,7 @@ parameters:
     values: [1, 100]
   rmax_update_v_max:
     target: nodes.agent-1.config.rmax_update_v_max
-    values: [1]
+    values: [0.1, 0.5, 0.7, 1]
   rmax_bonus_threshold:
     target: nodes.agent-1.config.rmax_bonus_threshold
     distribution: uniform
@@ -49,7 +49,7 @@ parameters:
     maximum: 1.0
   cfn_activation:
     target: nodes.intrinsic_reward-5.config.cfn_activation
-    values: ["relu", "gelu"]
+    values: ["gelu"]
   cfn_learning_rate:
     target: nodes.intrinsic_reward-5.config.cfn_learning_rate
     distribution: loguniform

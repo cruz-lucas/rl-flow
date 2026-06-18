@@ -25,7 +25,7 @@ execution:
     mem: 16G
     modules:
       - python/3.11
-      - cuda/12.3
+      - cuda/13.2
 metadata:
   experiment_id: factorial-design-experiments-experiment8-20260601-000000-000000000
 name: factorial_design_experiments__experiment8
@@ -45,12 +45,12 @@ nodes:
     y: 187.27359897803342
 - component: builtin.replay.uniform
   config:
-    batch_size: 512
-    capacity: 32768
+    batch_size: 64
+    capacity: 16384
     min_size: 4096
     save_dataset_path: ''
     updates_per_step: 1
-    intrinsic_updates_per_step: 20
+    intrinsic_updates_per_step: 50
     q_network_updates_per_step: 20
   id: replay_buffer-3
   position:
@@ -118,7 +118,7 @@ nodes:
     learning_rate: 1.2e-5
     loss_type: mse
     max_grad_norm: 10
-    normalize_observations: false
+    normalize_observations: true
     obs_normalization_clip: 5
     obs_normalization_epsilon: 1.0e-08
     optimizer: adam
@@ -134,8 +134,8 @@ nodes:
     rmax_update_v_max: 0.5
     rmax_v_max: 1
     seed: 0
-    target_update_freq: 512
-    target_update_frequency: 512
+    target_update_freq: 128
+    target_update_frequency: 128
     update_frequency: 1
   id: agent-1
   position:

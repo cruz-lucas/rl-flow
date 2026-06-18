@@ -1,7 +1,7 @@
 name: navix_dqn_hparam_sweep
 description: Example SLURM array sweep for Compute Canada / Alliance clusters.
 sweep_id: navix-dqn-hparam-sweep
-workflow: ../workflows/16x16_emptyroom_symbolic_cardinal__dqn.yaml
+workflow: ../workflows/empty_room/16x16/dqn.yaml
 method: grid
 metric:
   goal: maximize

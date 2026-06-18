@@ -21,7 +21,7 @@ execution:
     mem: 16G
     modules:
       - python/3.11
-      - cuda/12.3
+      - cuda/13.2
 metadata:
   experiment_id: factorial-design-experiments-experiment3-20260601-000000-000000000
 name: factorial_design_experiments__experiment3

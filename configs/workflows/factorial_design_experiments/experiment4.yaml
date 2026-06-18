@@ -21,7 +21,7 @@ execution:
     mem: 16G
     modules:
       - python/3.11
-      - cuda/12.3
+      - cuda/13.2
 metadata:
   experiment_id: factorial-design-experiments-experiment4-20260601-000000-000000000
 name: factorial_design_experiments__experiment4
@@ -81,8 +81,8 @@ nodes:
     y: 213.09072545717612
 - component: builtin.replay.uniform
   config:
-    batch_size: 512
-    capacity: 32768
+    batch_size: 64
+    capacity: 16384
     min_size: 4096
     save_dataset_path: ''
     updates_per_step: 20
