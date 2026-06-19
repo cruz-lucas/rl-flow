@@ -1,0 +1,76 @@
+name: navix_dqn_rmax_cfn_hparam_sweep
+description: Example SLURM array sweep for Compute Canada / Alliance clusters.
+sweep_id: dqn-rmax-cfn-fourrooms-hparam-sweep
+workflow: ../workflows/fourrooms/corner_distractor/dqn_rmax_cfn.yaml
+
+method: random
+num_trials: 200
+seed: 0
+
+metric:
+  goal: maximize
+  name: mean_train_return
+
+execution:
+  backend: slurm
+  options:
+    account: aip-machado
+    time: "08:00:00"
+    cpus_per_task: 2
+    gpus: l40s.4:1
+    mem: 4G
+    modules:
+      - python/3.11
+      - cuda/13.2
+      
+slurm:
+  max_parallel: 200
+  trials_per_task: 3
+  max_array_tasks: 1000
+
+parameters:
+  learning_rate:
+    target: nodes.agent-1.config.learning_rate
+    distribution: loguniform
+    minimum: 0.00001
+    maximum: 0.01
+  target_update_frequency:
+    target: nodes.agent-1.config.target_update_frequency
+    values: [32, 64, 128, 256, 512, 1024, 2048]
+  rmax_decision_v_max:
+    target: nodes.agent-1.config.rmax_decision_v_max
+    values: [1, 100]
+  rmax_update_v_max:
+    target: nodes.agent-1.config.rmax_update_v_max
+    values: [0.1, 0.5, 0.7, 1]
+  rmax_bonus_threshold:
+    target: nodes.agent-1.config.rmax_bonus_threshold
+    distribution: uniform
+    minimum: 0.1
+    maximum: 1.0
+  cfn_activation:
+    target: nodes.intrinsic_reward-5.config.cfn_activation
+    values: ["gelu"]
+  cfn_learning_rate:
+    target: nodes.intrinsic_reward-5.config.cfn_learning_rate
+    distribution: loguniform
+    minimum: 0.00001
+    maximum: 0.01
+  cfn_output_dim:
+    target: nodes.intrinsic_reward-5.config.cfn_output_dim
+    values: [256]
+  batch_size:
+    target: nodes.replay_buffer-3.config.batch_size
+    values: [32, 64, 128, 256, 512, 1024, 2048]
+  buffer_size:
+    target: nodes.replay_buffer-3.config.capacity
+    values: [8192, 16384, 32768, 65536, 131072]
+  intrinsic_updates_per_step:
+    target: nodes.replay_buffer-3.config.intrinsic_updates_per_step
+    values: [1, 5, 10, 20, 50, 100]
+  q_network_updates_per_step:
+    target: nodes.replay_buffer-3.config.q_network_updates_per_step
+    values: [1, 5, 10, 20, 50, 100]
+  seed:
+    target: nodes.runner-4.config.seed
+    values: [0, 1, 2]

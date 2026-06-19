@@ -1,0 +1,133 @@
+description: ''
+edges:
+- from_node: environment-2
+  from_port: environment
+  to_node: runner-4
+  to_port: environment
+- from_node: replay_buffer-3
+  from_port: replay_buffer
+  to_node: runner-4
+  to_port: replay_buffer
+- from_node: agent-1
+  from_port: agent
+  to_node: runner-4
+  to_port: agent
+- from_node: intrinsic_reward-5
+  from_port: intrinsic_reward
+  to_node: runner-4
+  to_port: intrinsic_reward
+execution:
+  backend: slurm
+  options:
+    account: aip-machado
+    time: "03:00:00"
+    cpus_per_task: 4
+    mem: 16G
+    modules:
+      - python/3.11
+metadata:
+  experiment_id: fourrooms-symbolic-cardinal-cornerdistractor--dqn-rmax-countbasedoracle-20260529-194128-67fb89a4
+name: fourrooms_symbolic_cardinal_cornerdistractor__dqn_rmax_countbasedoracle
+nodes:
+- component: navix.env.grid
+  config:
+    action_set: cardinal
+    env_name: four_rooms
+    layout: fixed
+    max_steps: 100
+    observation_mode: symbolic
+    size: 19
+    symbolic_distractor: corner_wall_color
+  id: environment-2
+  position:
+    x: 156.41413972689713
+    y: 187.27359897803342
+- component: builtin.replay.uniform
+  config:
+    batch_size: 256
+    capacity: 50000
+    min_size: 4096
+    save_dataset_path: ''
+    updates_per_step: 10
+  id: replay_buffer-3
+  position:
+    x: 174.93341438687742
+    y: 338.603562759114
+- component: builtin.runner.tabular_jax
+  config:
+    checkpoint_dir: checkpoints
+    checkpoint_freq: null
+    eval_episodes: 0
+    max_episode_steps: 100
+    save_final_checkpoint: false
+    seed: 0
+    train_episodes: 10000
+    train_steps: 1000000
+  id: runner-4
+  position:
+    x: 530.5
+    y: 93.46329889898027
+- component: builtin.agent.dqn_rmax_jax
+  config:
+    activation: relu
+    discount: 0.99
+    double_q: false
+    epsilon_decay_steps: 10000
+    epsilon_end: 0
+    epsilon_start: 0
+    eval_epsilon: 0
+    hidden_units:
+    - 128
+    - 128
+    huber_delta: 1
+    learning_rate: 0.0003
+    loss_type: mse
+    max_grad_norm: 10
+    normalize_observations: false
+    obs_normalization_clip: 5
+    obs_normalization_epsilon: 1.0e-08
+    optimizer: adam
+    optimizer_beta1: 0.9
+    optimizer_beta2: 0.999
+    optimizer_centered: false
+    optimizer_decay: 0.95
+    optimizer_epsilon: 1.0e-08
+    optimizer_momentum: 0
+    optimizer_weight_decay: 0
+    rmax_bonus_threshold: 0.5
+    rmax_decision_v_max: 5
+    rmax_update_v_max: 1
+    rmax_v_max: 1
+    seed: 0
+    target_update_frequency: 512
+    update_frequency: 1
+  id: agent-1
+  position:
+    x: 173.36573440689835
+    y: 24.616951446538593
+- component: builtin.intrinsic.count
+  config:
+    count_action_conditioning: input
+    count_activation: null
+    count_bonus_exponent: 0.5
+    count_hidden_units: null
+    count_ignore_empty_room_distractor: true
+    count_key_mode: oracle_tabular
+    count_learning_rate: null
+    count_min_count: 1
+    count_optimizer: null
+    count_table_overflow: error
+    count_table_size: 0
+    debug: false
+    debug_compact_observations: true
+    debug_log_dir: tmp/debug_logs
+    debug_log_to_mlflow: true
+    intrinsic_reward_center: false
+    intrinsic_reward_clip: 10
+    intrinsic_reward_epsilon: 0.0001
+    intrinsic_reward_scale: 1
+    intrinsic_stats_decay: 1
+  id: intrinsic_reward-5
+  position:
+    x: 213.36011265426498
+    y: 510.5641921190885
