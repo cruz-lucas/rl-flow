@@ -7,7 +7,7 @@ import jax
 import numpy as np
 
 
-AlgorithmName = Literal["q_learning", "sarsa"]
+AlgorithmName = Literal["q_learning", "sarsa", "rmax"]
 PolicyName = Literal["epsilon_greedy", "ucb", "softmax"]
 EnvironmentName = Literal["gridworld", "riverswim", "sixarms", "navix"]
 BufferName = Literal["none", "uniform"]
@@ -16,9 +16,12 @@ BufferName = Literal["none", "uniform"]
 @dataclass(frozen=True)
 class AgentConfig:
     algorithm: AlgorithmName
-    learning_rate: float
-    discount: float
-    initial_q: float
+    discount: float = 0.99
+    learning_rate: float = 0.0
+    initial_q: float = 0.0
+    known_count_threshold: int = 1
+    rmax_v_max: float = 1.0
+    planning_iterations: int = 25
 
 
 @dataclass(frozen=True)

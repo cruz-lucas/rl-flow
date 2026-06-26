@@ -14,6 +14,14 @@ def agent_config(component_id: str, config: dict[str, Any]) -> AgentConfig:
         algorithm = "q_learning"
     elif component_id == "builtin.agent.sarsa_tabular":
         algorithm = "sarsa"
+    elif component_id == "builtin.agent.rmax_tabular":
+        return AgentConfig(
+            algorithm="rmax",
+            discount=float(config["discount"]),
+            known_count_threshold=int(config["known_count_threshold"]),
+            rmax_v_max=float(config["rmax_v_max"]),
+            planning_iterations=int(config["planning_iterations"]),
+        )
     else:
         raise ValueError(f"Unsupported builtin tabular agent: {component_id}")
     return AgentConfig(
