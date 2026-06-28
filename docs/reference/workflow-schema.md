@@ -53,5 +53,5 @@ Validation rejects:
 - workflows without exactly one runner
 - runners without an agent and environment
 - DQN workflows without the required uniform replay buffer
-- DQN + R-Max workflows without an intrinsic-reward input
+- DQN + R-Max workflows without a knownness signal
 - unsupported execution backends

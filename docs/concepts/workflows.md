@@ -9,6 +9,7 @@ flowchart LR
     policy[Policy node] -- policy port --> runner
     replay[Replay buffer node] -- replay_buffer port --> runner
     intrinsic[Intrinsic reward node] -- intrinsic_reward port --> runner
+    intrinsic -- knownness_signal port --> agent
 ```
 
 ## Nodes

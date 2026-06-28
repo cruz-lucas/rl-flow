@@ -35,7 +35,9 @@ Standalone JAX DQN agent with an MLP Q-network and target network.
 
 ### Input Ports
 
-None.
+| Name | Type | Required | Description |
+| --- | --- | --- | --- |
+| `knownness_signal` | `intrinsic_reward` | no | Intrinsic module whose bonus is used as the R-Max knownness signal. |
 
 ### Output Ports
 

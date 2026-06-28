@@ -6,7 +6,7 @@ The intrinsic-reward example is:
 configs/workflows/16x16_emptyroom_symbolic_cardinal_cornerdistractor__dqn_rmax_countbasedoracle.yaml
 ```
 
-It connects `builtin.agent.dqn_rmax_jax` to `builtin.intrinsic.count`. The intrinsic module acts as an unknown-state detector. Unknown actions can receive optimistic R-Max values during action selection and target updates.
+It connects `builtin.intrinsic.count` to the `knownness_signal` input on `builtin.agent.dqn_rmax_jax`. The intrinsic module acts as an unknown-state detector. Unknown actions can receive optimistic R-Max values during action selection and target updates.
 
 ## Validate
 
@@ -14,7 +14,7 @@ It connects `builtin.agent.dqn_rmax_jax` to `builtin.intrinsic.count`. The intri
 uv run rlflow workflow validate configs/workflows/16x16_emptyroom_symbolic_cardinal_cornerdistractor__dqn_rmax_countbasedoracle.yaml
 ```
 
-The validator requires DQN-style agents to use `builtin.replay.uniform` on the runner `replay_buffer` port. It also requires `builtin.agent.dqn_rmax_jax` to have an `intrinsic_reward` input.
+The validator requires DQN-style agents to use `builtin.replay.uniform` on the runner `replay_buffer` port. It also requires `builtin.agent.dqn_rmax_jax` to have a `knownness_signal` input, with the old runner `intrinsic_reward` edge still accepted for compatibility.
 
 ## Run Locally
 
