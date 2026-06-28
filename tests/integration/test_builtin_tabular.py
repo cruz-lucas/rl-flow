@@ -196,6 +196,134 @@ def test_builtin_tabular_q_learning_navix_empty_room_runs(tmp_path: Path) -> Non
     assert metrics["mean_eval_return"] is not None
 
 
+def test_builtin_tabular_rmax_navix_empty_room_runs_without_policy(tmp_path: Path) -> None:
+    workflow = WorkflowSpec.model_validate(
+        {
+            "name": "tabular_rmax_navix_empty_room",
+            "nodes": [
+                {
+                    "id": "env",
+                    "component": "navix.env.grid",
+                    "position": {"x": 0, "y": 0},
+                    "config": {
+                        "env_name": "empty_room",
+                        "size": 5,
+                        "layout": "fixed",
+                        "observation_mode": "tabular",
+                        "action_set": "cardinal",
+                        "max_steps": 20,
+                    },
+                },
+                {
+                    "id": "agent",
+                    "component": "builtin.agent.rmax_tabular",
+                    "position": {"x": 0, "y": 100},
+                    "config": {
+                        "discount": 0.99,
+                        "known_count_threshold": 1,
+                        "rmax_v_max": 1.0,
+                        "planning_iterations": 5,
+                    },
+                },
+                {
+                    "id": "runner",
+                    "component": "builtin.runner.tabular_jax",
+                    "position": {"x": 300, "y": 100},
+                    "config": {
+                        "seed": 0,
+                        "train_episodes": 2,
+                        "max_episode_steps": 5,
+                        "eval_episodes": 0,
+                        "checkpoint_freq": None,
+                        "checkpoint_dir": "checkpoints",
+                        "save_final_checkpoint": False,
+                    },
+                },
+            ],
+            "edges": [
+                {"from_node": "env", "from_port": "environment", "to_node": "runner", "to_port": "environment"},
+                {"from_node": "agent", "from_port": "agent", "to_node": "runner", "to_port": "agent"},
+            ],
+        }
+    )
+
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+
+    subprocess.run(["bash", experiment.command], check=True)
+
+    q_table = np.load(tmp_path / "q_table.npy")
+    action_counts = np.load(tmp_path / "action_counts.npy")
+    metrics = json.loads((tmp_path / "metrics.json").read_text(encoding="utf-8"))
+    assert q_table.shape == (9, 4)
+    assert action_counts.shape == (9, 4)
+    assert np.sum(action_counts) > 0
+    assert metrics["agent"] == "builtin.agent.rmax_tabular"
+    assert metrics["policy"] is None
+    assert metrics["environment"] == "navix.env.grid"
+
+
+def test_builtin_tabular_rmax_navix_truncation_bootstraps(tmp_path: Path) -> None:
+    workflow = WorkflowSpec.model_validate(
+        {
+            "name": "tabular_rmax_navix_truncation",
+            "nodes": [
+                {
+                    "id": "env",
+                    "component": "navix.env.grid",
+                    "position": {"x": 0, "y": 0},
+                    "config": {
+                        "env_name": "empty_room",
+                        "size": 5,
+                        "layout": "fixed",
+                        "observation_mode": "tabular",
+                        "action_set": "cardinal",
+                        "max_steps": 1,
+                    },
+                },
+                {
+                    "id": "agent",
+                    "component": "builtin.agent.rmax_tabular",
+                    "position": {"x": 0, "y": 100},
+                    "config": {
+                        "discount": 0.99,
+                        "known_count_threshold": 1,
+                        "rmax_v_max": 1.0,
+                        "planning_iterations": 1,
+                    },
+                },
+                {
+                    "id": "runner",
+                    "component": "builtin.runner.tabular_jax",
+                    "position": {"x": 300, "y": 100},
+                    "config": {
+                        "seed": 0,
+                        "train_episodes": 1,
+                        "max_episode_steps": 1,
+                        "eval_episodes": 0,
+                        "checkpoint_freq": None,
+                        "checkpoint_dir": "checkpoints",
+                        "save_final_checkpoint": False,
+                    },
+                },
+            ],
+            "edges": [
+                {"from_node": "env", "from_port": "environment", "to_node": "runner", "to_port": "environment"},
+                {"from_node": "agent", "from_port": "agent", "to_node": "runner", "to_port": "agent"},
+            ],
+        }
+    )
+
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+
+    subprocess.run(["bash", experiment.command], check=True)
+
+    q_table = np.load(tmp_path / "q_table.npy")
+    action_counts = np.load(tmp_path / "action_counts.npy")
+    visited_q_values = q_table[action_counts > 0]
+    assert visited_q_values.shape == (1,)
+    np.testing.assert_allclose(visited_q_values[0], 0.99, rtol=1e-6)
+
+
 def test_builtin_tabular_q_learning_navix_four_rooms_runs(tmp_path: Path) -> None:
     workflow = WorkflowSpec.model_validate(
         {
@@ -529,6 +657,16 @@ def test_builtin_jax_runner_uses_dqn_rmax_with_count_bonus(tmp_path: Path) -> No
             {
                 "from_node": "intrinsic",
                 "from_port": "intrinsic_reward",
+                "to_node": "agent",
+                "to_port": "knownness_signal",
+            }
+        )
+    )
+    workflow.edges.append(
+        WorkflowEdge.model_validate(
+            {
+                "from_node": "intrinsic",
+                "from_port": "intrinsic_reward",
                 "to_node": "runner",
                 "to_port": "intrinsic_reward",
             }
@@ -543,6 +681,8 @@ def test_builtin_jax_runner_uses_dqn_rmax_with_count_bonus(tmp_path: Path) -> No
     assert metrics["agent"] == "builtin.agent.dqn_rmax_jax"
     assert metrics["agent_algorithm"] == "dqn_rmax"
     assert metrics["intrinsic_reward"] == "builtin.intrinsic.count"
+    assert metrics["knownness_signal"] == "builtin.intrinsic.count"
+    assert metrics["intrinsic_reward_shared_with_knownness"] is True
     assert metrics["count_table_entries"] is not None
     assert metrics["count_table_overflow"] is False
     assert metrics["mean_eval_return"] is not None
@@ -1065,7 +1205,13 @@ def test_dqn_replay_updates_split_intrinsic_and_q_counts() -> None:
         learning_rate=agent.learning_rate,
     )
     q_optimizer = _optimizer(agent, agent.learning_rate, agent.optimizer)
-    intrinsic_optimizer = _optimizer(agent, intrinsic.learning_rate, intrinsic.optimizer)
+    knownness = DqnIntrinsicConfig()
+    intrinsic_optimizer = _optimizer(agent, knownness.learning_rate, knownness.optimizer)
+    reward_intrinsic_optimizer = _optimizer(
+        agent,
+        intrinsic.learning_rate,
+        intrinsic.optimizer,
+    )
     q_params = _init_mlp(jax.random.PRNGKey(1), 2, agent.hidden_units, 2)
     replay_state = _initial_replay_state(
         capacity=4,
@@ -1108,16 +1254,24 @@ def test_dqn_replay_updates_split_intrinsic_and_q_counts() -> None:
         opt_state=q_optimizer.init(q_params),
         intrinsic_state=_initial_intrinsic_state(
             agent,
-            intrinsic,
+            knownness,
             input_dim=2,
             num_actions=2,
             key=jax.random.PRNGKey(2),
+        ),
+        reward_intrinsic_state=_initial_intrinsic_state(
+            agent,
+            intrinsic,
+            input_dim=2,
+            num_actions=2,
+            key=jax.random.PRNGKey(4),
         ),
         replay_state=replay_state,
         key=jax.random.PRNGKey(3),
         global_step=jnp.asarray(0, dtype=jnp.int32),
         gradient_step=jnp.asarray(0, dtype=jnp.int32),
         intrinsic_gradient_step=jnp.asarray(0, dtype=jnp.int32),
+        reward_intrinsic_gradient_step=jnp.asarray(0, dtype=jnp.int32),
     )
     replay = DqnReplayConfig(
         name="builtin.replay.uniform",
@@ -1133,13 +1287,17 @@ def test_dqn_replay_updates_split_intrinsic_and_q_counts() -> None:
         state,
         agent,
         replay,
+        knownness,
         intrinsic,
+        False,
         q_optimizer,
         intrinsic_optimizer,
+        reward_intrinsic_optimizer,
         num_actions=2,
     )
 
-    assert int(np.asarray(state.intrinsic_gradient_step)) == 3
+    assert int(np.asarray(state.intrinsic_gradient_step)) == 0
+    assert int(np.asarray(state.reward_intrinsic_gradient_step)) == 3
     assert int(np.asarray(state.gradient_step)) == 2
     assert np.isfinite(np.asarray(loss))
 

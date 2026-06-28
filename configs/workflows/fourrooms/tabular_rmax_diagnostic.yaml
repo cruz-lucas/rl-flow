@@ -1,0 +1,54 @@
+description: Tabular R-Max diagnostic run for 16x16 Navix EmptyRoom maps after 10 episodes.
+edges:
+- from_node: environment-1
+  from_port: environment
+  to_node: runner-1
+  to_port: environment
+- from_node: agent-1
+  from_port: agent
+  to_node: runner-1
+  to_port: agent
+execution:
+  backend: local
+  cluster: null
+  options: {}
+metadata:
+  experiment_id: 16x16-emptyroom-tabular-cardinal--rmax-diagnostic
+name: 16x16_emptyroom_tabular_cardinal__rmax_diagnostic
+nodes:
+- component: navix.env.grid
+  config:
+    action_set: cardinal
+    env_name: four_rooms
+    layout: fixed
+    max_steps: 50
+    observation_mode: tabular
+    size: 19
+  id: environment-1
+  position:
+    x: 120
+    y: 160
+- component: builtin.agent.rmax_tabular
+  config:
+    discount: 0.99
+    known_count_threshold: 1
+    planning_iterations: 100
+    rmax_v_max: 1
+  id: agent-1
+  position:
+    x: 120
+    y: 20
+- component: builtin.runner.tabular_jax
+  config:
+    checkpoint_dir: checkpoints
+    checkpoint_freq: null
+    eval_episodes: 0
+    max_episode_steps: 50
+    save_final_checkpoint: false
+    seed: 0
+    train_episodes: 50
+    train_steps: null
+  id: runner-1
+  position:
+    x: 480
+    y: 80

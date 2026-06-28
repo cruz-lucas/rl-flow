@@ -83,11 +83,51 @@ def test_validation_accepts_string_hidden_units() -> None:
     assert result.valid
 
 
-def test_validation_requires_intrinsic_for_dqn_rmax() -> None:
+def test_validation_requires_knownness_for_dqn_rmax() -> None:
     workflow = valid_workflow()
     workflow.nodes[1].component = "builtin.agent.dqn_rmax_jax"
 
     result = validator().validate(workflow)
 
     assert not result.valid
-    assert any(error.field == "intrinsic_reward" for error in result.errors)
+    assert any(error.field == "knownness_signal" for error in result.errors)
+
+
+def test_validation_accepts_agent_knownness_for_dqn_rmax() -> None:
+    workflow = valid_workflow()
+    workflow.nodes[1].component = "builtin.agent.dqn_rmax_jax"
+    workflow.nodes.append(
+        WorkflowNode(id="intrinsic", component="builtin.intrinsic.count")
+    )
+    workflow.edges.append(
+        WorkflowEdge(
+            from_node="intrinsic",
+            from_port="intrinsic_reward",
+            to_node="agent",
+            to_port="knownness_signal",
+        )
+    )
+
+    result = validator().validate(workflow)
+
+    assert result.valid
+
+
+def test_validation_accepts_legacy_runner_intrinsic_for_dqn_rmax() -> None:
+    workflow = valid_workflow()
+    workflow.nodes[1].component = "builtin.agent.dqn_rmax_jax"
+    workflow.nodes.append(
+        WorkflowNode(id="intrinsic", component="builtin.intrinsic.count")
+    )
+    workflow.edges.append(
+        WorkflowEdge(
+            from_node="intrinsic",
+            from_port="intrinsic_reward",
+            to_node="runner",
+            to_port="intrinsic_reward",
+        )
+    )
+
+    result = validator().validate(workflow)
+
+    assert result.valid
