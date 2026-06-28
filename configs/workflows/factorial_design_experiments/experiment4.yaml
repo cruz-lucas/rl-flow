@@ -1,9 +1,5 @@
 description: ''
 edges:
-- from_node: agent-1
-  from_port: agent
-  to_node: runner-4
-  to_port: agent
 - from_node: environment-2
   from_port: environment
   to_node: runner-4
@@ -12,11 +8,19 @@ edges:
   from_port: replay_buffer
   to_node: runner-4
   to_port: replay_buffer
+- from_node: agent-1
+  from_port: agent
+  to_node: runner-4
+  to_port: agent
+- from_node: intrinsic_reward-5
+  from_port: intrinsic_reward
+  to_node: runner-4
+  to_port: intrinsic_reward
 execution:
   backend: slurm
   options:
     account: aip-machado
-    time: "03:00:00"
+    time: "08:00:00"
     cpus_per_task: 2
     mem: 16G
     modules:
@@ -26,46 +30,6 @@ metadata:
   experiment_id: factorial-design-experiments-experiment4-20260601-000000-000000000
 name: factorial_design_experiments__experiment4
 nodes:
-- component: builtin.agent.dqn_jax
-  config:
-    activation: relu
-    discount: 0.99
-    double_q: false
-    eps_decay_steps: 200000
-    eps_end: 0.001
-    eps_start: 1
-    epsilon_decay_steps: 200000
-    epsilon_end: 0.001
-    epsilon_start: 1
-    eval_epsilon: 0
-    hidden_dims: null
-    hidden_units:
-    - 128
-    - 128
-    huber_delta: 1
-    learning_rate: 1.2e-5
-    loss_type: mse
-    max_grad_norm: 10
-    normalization: last
-    normalize_observations: true
-    obs_normalization_clip: 5
-    obs_normalization_epsilon: 1.0e-08
-    optimizer: adam
-    optimizer_beta1: 0.9
-    optimizer_beta2: 0.999
-    optimizer_centered: false
-    optimizer_decay: 0.95
-    optimizer_epsilon: 1.0e-08
-    optimizer_momentum: 0
-    optimizer_weight_decay: 0
-    seed: 0
-    target_update_freq: 512
-    target_update_frequency: 512
-    update_frequency: 1
-  id: agent-1
-  position:
-    x: 211.80511148533765
-    y: 69.90927454282391
 - component: navix.env.grid
   config:
     action_set: cardinal
@@ -77,19 +41,20 @@ nodes:
     symbolic_distractor: corner_wall_color
   id: environment-2
   position:
-    x: 208.04839268518253
-    y: 213.09072545717612
+    x: 156.41413972689713
+    y: 187.27359897803342
 - component: builtin.replay.uniform
   config:
     batch_size: 64
-    capacity: 16384
+    capacity: 8192
     min_size: 4096
     save_dataset_path: ''
-    updates_per_step: 20
+    intrinsic_updates_per_step: 50
+    q_network_updates_per_step: 10
   id: replay_buffer-3
   position:
-    x: 207.3071314564006
-    y: 351.24432262758324
+    x: 174.2082513549356
+    y: 339.3287257910558
 - component: builtin.runner.tabular_jax
   config:
     checkpoint_dir: checkpoints
@@ -102,5 +67,76 @@ nodes:
     train_steps: 1000000
   id: runner-4
   position:
-    x: 531.6496612336134
+    x: 530.5
     y: 93.46329889898027
+- component: builtin.intrinsic.cfn
+  config:
+    cfn_action_conditioning: pair
+    cfn_activation: gelu
+    cfn_bonus_exponent: 0.5
+    cfn_final_tanh: false
+    cfn_hidden_units:
+    - 128
+    - 128
+    cfn_learning_rate: 0.001
+    cfn_optimizer: null
+    cfn_output_dim: 128
+    cfn_prior_scale: 1
+    cfn_update_period: 1
+    cfn_use_random_prior: true
+    debug: false
+    debug_compact_observations: true
+    debug_log_dir: tmp/debug_logs
+    debug_log_to_mlflow: true
+    intrinsic_reward_center: false
+    intrinsic_reward_clip: 100
+    intrinsic_reward_epsilon: 1
+    intrinsic_reward_scale: 1
+    intrinsic_stats_decay: 0.9
+  id: intrinsic_reward-5
+  position:
+    x: 205.80263690633404
+    y: 523.7480633766304
+- component: builtin.agent.dqn_rmax_jax
+  config:
+    activation: relu
+    discount: 0.99
+    double_q: false
+    eps_decay_steps: 1
+    eps_end: 0
+    eps_start: 0
+    epsilon_decay_steps: 1
+    epsilon_end: 0
+    epsilon_start: 0
+    eval_epsilon: 0
+    hidden_dims: null
+    hidden_units:
+    - 128
+    - 128
+    huber_delta: 1
+    learning_rate: 1.8e-5
+    loss_type: mse
+    max_grad_norm: 10
+    normalize_observations: true
+    obs_normalization_clip: 5
+    obs_normalization_epsilon: 1.0e-08
+    optimizer: adam
+    optimizer_beta1: 0.9
+    optimizer_beta2: 0.999
+    optimizer_centered: false
+    optimizer_decay: 0.95
+    optimizer_epsilon: 1.0e-08
+    optimizer_momentum: 0
+    optimizer_weight_decay: 0
+    rmax_bonus_threshold: 0.5
+    rmax_decision_v_max: 5
+    rmax_update_v_max: 0.5
+    rmax_v_max: 1
+    seed: 0
+    target_update_freq: 128
+    target_update_frequency: 128
+    update_frequency: 1
+  id: agent-1
+  position:
+    x: 173.36573440689835
+    y: 24.616951446538593
