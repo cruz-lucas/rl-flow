@@ -31,12 +31,12 @@ nodes:
     activation: relu
     discount: 0.99
     double_q: false
-    eps_decay_steps: 1
-    eps_end: 0
-    eps_start: 0
-    epsilon_decay_steps: 1
-    epsilon_end: 0
-    epsilon_start: 0
+    eps_decay_steps: 200000
+    eps_end: 0.01
+    eps_start: 1
+    epsilon_decay_steps: 200000
+    epsilon_end: 0.01
+    epsilon_start: 1
     eval_epsilon: 0
     hidden_dims: null
     hidden_units:
@@ -61,7 +61,7 @@ nodes:
     seed: 0
     target_update_freq: 512
     target_update_frequency: 512
-    update_frequency: 1
+    update_frequency: 2
   id: agent-1
   position:
     x: 211.80511148533765
@@ -82,10 +82,10 @@ nodes:
 - component: builtin.replay.uniform
   config:
     batch_size: 64
-    capacity: 16384
+    capacity: 65536
     min_size: 4096
     save_dataset_path: ''
-    updates_per_step: 20
+    updates_per_step: 10
   id: replay_buffer-3
   position:
     x: 207.3071314564006

@@ -31,12 +31,12 @@ nodes:
     activation: relu
     discount: 0.99
     double_q: false
-    eps_decay_steps: 1
-    eps_end: 0
-    eps_start: 0
-    epsilon_decay_steps: 1
-    epsilon_end: 0
-    epsilon_start: 0
+    eps_decay_steps: 200000
+    eps_end: 0.01
+    eps_start: 1
+    epsilon_decay_steps: 200000
+    epsilon_end: 0.01
+    epsilon_start: 1
     eval_epsilon: 0
     hidden_dims: null
     hidden_units:
