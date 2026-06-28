@@ -14,8 +14,8 @@ edges:
   to_port: agent
 - from_node: intrinsic_reward-5
   from_port: intrinsic_reward
-  to_node: runner-4
-  to_port: intrinsic_reward
+  to_node: agent-1
+  to_port: knownness_signal
 execution:
   backend: slurm
   options:

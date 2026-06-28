@@ -14,21 +14,25 @@ edges:
   to_port: agent
 - from_node: intrinsic_reward-5
   from_port: intrinsic_reward
+  to_node: runner-4
+  to_port: intrinsic_reward
+- from_node: intrinsic_reward-5
+  from_port: intrinsic_reward
   to_node: agent-1
   to_port: knownness_signal
 execution:
   backend: slurm
   options:
     account: aip-machado
-    time: "08:00:00"
+    time: "03:00:00"
     cpus_per_task: 2
-    mem: 16G
+    mem: 8G
     modules:
       - python/3.11
       - cuda/13.2
 metadata:
-  experiment_id: factorial-design-experiments-experiment4-20260601-000000-000000000
-name: factorial_design_experiments__experiment4
+  experiment_id: factorial-design-experiments-experiment7-20260601-000000-000000000
+name: factorial_design_experiments__experiment7
 nodes:
 - component: navix.env.grid
   config:
@@ -50,7 +54,7 @@ nodes:
     min_size: 4096
     save_dataset_path: ''
     intrinsic_updates_per_step: 50
-    q_network_updates_per_step: 10
+    q_network_updates_per_step: 1
   id: replay_buffer-3
   position:
     x: 174.2082513549356
