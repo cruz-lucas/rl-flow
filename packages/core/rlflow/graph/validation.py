@@ -243,13 +243,31 @@ class WorkflowValidator:
                     code="invalid_component_connection",
                 )
             )
-        if agent_component.id == "builtin.agent.dqn_rmax_jax" and "intrinsic_reward" not in inbound:
-            errors.append(
-                ValidationErrorDetail(
-                    message="builtin.agent.dqn_rmax_jax requires an intrinsic_reward input",
-                    node_id=runner_id,
-                    field="intrinsic_reward",
-                    code="missing_required_port",
+        if agent_component.id == "builtin.agent.dqn_rmax_jax":
+            knownness_edges = [
+                edge
+                for edge in workflow.edges
+                if edge.to_node == agent_edge.from_node and edge.to_port == "knownness_signal"
+            ]
+            if len(knownness_edges) > 1:
+                errors.append(
+                    ValidationErrorDetail(
+                        message="builtin.agent.dqn_rmax_jax accepts at most one knownness_signal input",
+                        node_id=agent_edge.from_node,
+                        field="knownness_signal",
+                        code="multiple_input_edges",
+                    )
                 )
-            )
+            if not knownness_edges and "intrinsic_reward" not in inbound:
+                errors.append(
+                    ValidationErrorDetail(
+                        message=(
+                            "builtin.agent.dqn_rmax_jax requires a knownness_signal "
+                            "input, or a legacy runner intrinsic_reward input"
+                        ),
+                        node_id=agent_edge.from_node,
+                        field="knownness_signal",
+                        code="missing_required_port",
+                    )
+                )
         return errors

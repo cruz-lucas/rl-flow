@@ -58,7 +58,7 @@ def main() -> int:
         if "replay_buffer" in node_ids
         else None
     )
-    intrinsic_node = (
+    runner_intrinsic_node = (
         workflow_node(workflow, node_ids["intrinsic_reward"])
         if "intrinsic_reward" in node_ids
         else None
@@ -70,10 +70,33 @@ def main() -> int:
             raise ValueError("builtin DQN agents require a builtin.replay.uniform input")
         agent = dqn_agent_config(agent_node.component, resolved[agent_node.id])
         replay = _dqn_replay_from_node(buffer_node, resolved)
-        intrinsic = (
-            dqn_intrinsic_config(intrinsic_node.component, resolved[intrinsic_node.id], agent)
-            if intrinsic_node is not None
+        agent_knownness_node = _agent_knownness_node(workflow, agent_node.id)
+        knownness_node = agent_knownness_node
+        reward_intrinsic_node = runner_intrinsic_node
+        if agent_node.component == DQN_RMAX_AGENT_COMPONENT:
+            if knownness_node is None and runner_intrinsic_node is not None:
+                knownness_node = runner_intrinsic_node
+                reward_intrinsic_node = None
+        else:
+            knownness_node = None
+        knownness = (
+            dqn_intrinsic_config(knownness_node.component, resolved[knownness_node.id], agent)
+            if knownness_node is not None
             else dqn_intrinsic_config(None, None, agent)
+        )
+        intrinsic_reward = (
+            dqn_intrinsic_config(
+                reward_intrinsic_node.component,
+                resolved[reward_intrinsic_node.id],
+                agent,
+            )
+            if reward_intrinsic_node is not None
+            else dqn_intrinsic_config(None, None, agent)
+        )
+        shared_intrinsic = (
+            knownness_node is not None
+            and reward_intrinsic_node is not None
+            and knownness_node.id == reward_intrinsic_node.id
         )
         result = run_dqn_training(
             env_component=env_node.component,
@@ -81,7 +104,9 @@ def main() -> int:
             agent=agent,
             runner=runner,
             replay=replay,
-            intrinsic=intrinsic,
+            knownness=knownness,
+            intrinsic_reward=intrinsic_reward,
+            shared_intrinsic=shared_intrinsic,
             run_dir=run_dir,
         )
         _write_dqn_outputs(
@@ -93,16 +118,23 @@ def main() -> int:
             runner_settings=resolved[runner_node.id],
             replay_component=None if buffer_node is None else buffer_node.component,
             replay=replay,
-            intrinsic_component=None if intrinsic_node is None else intrinsic_node.component,
+            intrinsic_component=(
+                None if reward_intrinsic_node is None else reward_intrinsic_node.component
+            ),
+            knownness_component=None if knownness_node is None else knownness_node.component,
+            intrinsic_shared_with_knownness=shared_intrinsic,
         )
         return 0
 
-    if "policy" not in node_ids:
-        raise ValueError("builtin tabular agents require a policy input")
-
-    policy_node = workflow_node(workflow, node_ids["policy"])
     agent = agent_config(agent_node.component, resolved[agent_node.id])
-    policy = policy_config(policy_node.component, resolved[policy_node.id])
+    policy = None
+    policy_component = None
+    if agent.algorithm != "rmax":
+        if "policy" not in node_ids:
+            raise ValueError("builtin tabular Q-learning and Sarsa agents require a policy input")
+        policy_node = workflow_node(workflow, node_ids["policy"])
+        policy = policy_config(policy_node.component, resolved[policy_node.id])
+        policy_component = policy_node.component
     environment = environment_config(env_node.component, resolved[env_node.id])
     replay_buffer = (
         buffer_config(buffer_node.component, resolved[buffer_node.id])
@@ -116,7 +148,7 @@ def main() -> int:
         result=result,
         agent=agent,
         agent_component=agent_node.component,
-        policy_component=policy_node.component,
+        policy_component=policy_component,
         env_component=env_node.component,
         replay_component=None if buffer_node is None else buffer_node.component,
         replay_buffer=replay_buffer,
@@ -136,13 +168,26 @@ def _dqn_replay_from_node(
     return dqn_replay_config(buffer_node.component, resolved[buffer_node.id])
 
 
+def _agent_knownness_node(workflow: WorkflowSpec, agent_id: str):
+    knownness_edges = [
+        edge
+        for edge in workflow.edges
+        if edge.to_node == agent_id and edge.to_port == "knownness_signal"
+    ]
+    if len(knownness_edges) > 1:
+        raise ValueError("builtin.agent.dqn_rmax_jax accepts at most one knownness_signal input")
+    if not knownness_edges:
+        return None
+    return workflow_node(workflow, knownness_edges[0].from_node)
+
+
 def _write_tabular_outputs(
     *,
     run_dir: Path,
     result,
     agent,
     agent_component: str,
-    policy_component: str,
+    policy_component: str | None,
     env_component: str,
     replay_component: str | None,
     replay_buffer,
@@ -242,6 +287,8 @@ def _write_dqn_outputs(
     replay_component: str | None,
     replay: DqnReplayConfig,
     intrinsic_component: str | None,
+    knownness_component: str | None,
+    intrinsic_shared_with_knownness: bool,
 ) -> None:
     logs_dir = run_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -298,6 +345,8 @@ def _write_dqn_outputs(
         "network": "builtin.mlp_q_network",
         "agent_algorithm": "dqn_rmax" if agent_component == DQN_RMAX_AGENT_COMPONENT else "dqn",
         "intrinsic_reward": intrinsic_component,
+        "knownness_signal": knownness_component,
+        "intrinsic_reward_shared_with_knownness": bool(intrinsic_shared_with_knownness),
         "count_table_entries": result.count_table_entries,
         "count_table_overflow": result.count_table_overflow,
         "saved_replay_dataset_path": (

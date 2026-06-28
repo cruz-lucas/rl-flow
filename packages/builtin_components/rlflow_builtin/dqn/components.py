@@ -25,6 +25,14 @@ def dqn_agent_components() -> list[ComponentSpec]:
                 "DQN agent that treats high intrinsic-bonus state-action pairs as "
                 "unknown and assigns them an optimistic R-Max value."
             ),
+            input_ports=[
+                PortSpec(
+                    name="knownness_signal",
+                    type="intrinsic_reward",
+                    required=False,
+                    description="Intrinsic module whose bonus is used as the R-Max knownness signal.",
+                )
+            ],
             output_ports=[PortSpec(name="agent", type="agent")],
             config_schema=component_schema(_dqn_rmax_properties()),
             defaults=_dqn_rmax_defaults(),

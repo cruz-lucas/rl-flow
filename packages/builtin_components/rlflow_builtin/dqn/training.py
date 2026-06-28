@@ -134,6 +134,7 @@ class DqnReplayState(NamedTuple):
     next_observations: jax.Array
     terminals: jax.Array
     intrinsic_targets: jax.Array
+    reward_intrinsic_targets: jax.Array
     state_ids: jax.Array
     next_state_ids: jax.Array
     source_observations: jax.Array
@@ -160,11 +161,13 @@ class DqnTrainState(NamedTuple):
     target_params: tuple[dict[str, jax.Array], ...]
     opt_state: optax.OptState
     intrinsic_state: DqnIntrinsicState
+    reward_intrinsic_state: DqnIntrinsicState
     replay_state: DqnReplayState
     key: jax.Array
     global_step: jax.Array
     gradient_step: jax.Array
     intrinsic_gradient_step: jax.Array
+    reward_intrinsic_gradient_step: jax.Array
 
 
 @dataclass(frozen=True)
@@ -187,8 +190,8 @@ def dqn_agent_config(component_id: str, config: dict[str, Any]) -> DqnAgentConfi
     if component_id not in {DQN_AGENT_COMPONENT, DQN_RMAX_AGENT_COMPONENT}:
         raise ValueError(
             f"Unsupported DQN agent {component_id!r}. Use {DQN_AGENT_COMPONENT} "
-            f"or {DQN_RMAX_AGENT_COMPONENT} and connect intrinsic bonuses through "
-            "the intrinsic_reward port."
+            f"or {DQN_RMAX_AGENT_COMPONENT} and connect R-Max knownness through "
+            "the knownness_signal port."
         )
     algorithm: AgentAlgorithm = "dqn_rmax" if component_id == DQN_RMAX_AGENT_COMPONENT else "dqn"
     return DqnAgentConfig(
@@ -404,11 +407,26 @@ def run_dqn_training(
     replay: DqnReplayConfig,
     runner: RunnerConfig,
     intrinsic: DqnIntrinsicConfig | None = None,
+    knownness: DqnIntrinsicConfig | None = None,
+    intrinsic_reward: DqnIntrinsicConfig | None = None,
+    shared_intrinsic: bool = False,
     run_dir: Path | None = None,
 ) -> DqnRunResult:
-    intrinsic = intrinsic or dqn_intrinsic_config(None, None, agent)
-    if agent.algorithm == "dqn_rmax" and intrinsic.kind == "none":
-        raise ValueError("builtin.agent.dqn_rmax_jax requires an intrinsic_reward input")
+    none_intrinsic = dqn_intrinsic_config(None, None, agent)
+    if intrinsic is not None and knownness is None and intrinsic_reward is None:
+        if agent.algorithm == "dqn_rmax":
+            knownness = intrinsic
+        else:
+            intrinsic_reward = intrinsic
+    knownness = knownness or none_intrinsic
+    intrinsic_reward = intrinsic_reward or none_intrinsic
+    shared_intrinsic = bool(
+        shared_intrinsic
+        and knownness.kind != "none"
+        and intrinsic_reward.kind != "none"
+    )
+    if agent.algorithm == "dqn_rmax" and knownness.kind == "none":
+        raise ValueError("builtin.agent.dqn_rmax_jax requires a knownness_signal input")
     dqn_env = _make_dqn_environment(
         env_component,
         env_settings,
@@ -416,35 +434,56 @@ def run_dqn_training(
     )
     seed = runner.seed + agent.seed
     key = jax.random.PRNGKey(seed)
-    key, q_key, intrinsic_key = jax.random.split(key, 3)
+    key, q_key, knownness_key, reward_intrinsic_key = jax.random.split(key, 4)
 
     q_optimizer = _optimizer(agent, agent.learning_rate, agent.optimizer)
     q_params = _init_mlp(q_key, dqn_env.input_dim, agent.hidden_units, dqn_env.num_actions)
+    knownness_state = _initial_intrinsic_state(
+        agent,
+        knownness,
+        dqn_env.input_dim,
+        dqn_env.num_actions,
+        knownness_key,
+        oracle_state_space_size=dqn_env.oracle_state_space_size,
+    )
+    reward_intrinsic_state = (
+        knownness_state
+        if shared_intrinsic
+        else _initial_intrinsic_state(
+            agent,
+            intrinsic_reward,
+            dqn_env.input_dim,
+            dqn_env.num_actions,
+            reward_intrinsic_key,
+            oracle_state_space_size=dqn_env.oracle_state_space_size,
+        )
+    )
     initial_state = DqnTrainState(
         params=q_params,
         target_params=_clone_params(q_params),
         opt_state=q_optimizer.init(q_params),
-        intrinsic_state=_initial_intrinsic_state(
-            agent,
-            intrinsic,
-            dqn_env.input_dim,
-            dqn_env.num_actions,
-            intrinsic_key,
-            oracle_state_space_size=dqn_env.oracle_state_space_size,
-        ),
+        intrinsic_state=knownness_state,
+        reward_intrinsic_state=reward_intrinsic_state,
         replay_state=_initial_replay_state(
             replay.capacity,
             dqn_env.input_dim,
-            _replay_intrinsic_target_dim(intrinsic),
+            _replay_intrinsic_target_dim(knownness),
             dqn_env.observation_shape,
             dqn_env.observation_dtype,
+            reward_intrinsic_target_dim=_replay_intrinsic_target_dim(intrinsic_reward),
         ),
         key=key,
         global_step=jnp.asarray(0, dtype=jnp.int32),
         gradient_step=jnp.asarray(0, dtype=jnp.int32),
         intrinsic_gradient_step=jnp.asarray(0, dtype=jnp.int32),
+        reward_intrinsic_gradient_step=jnp.asarray(0, dtype=jnp.int32),
     )
-    intrinsic_optimizer = _optimizer(agent, intrinsic.learning_rate, intrinsic.optimizer)
+    intrinsic_optimizer = _optimizer(agent, knownness.learning_rate, knownness.optimizer)
+    reward_intrinsic_optimizer = _optimizer(
+        agent,
+        intrinsic_reward.learning_rate,
+        intrinsic_reward.optimizer,
+    )
 
     if runner.train_steps is None:
 
@@ -456,9 +495,12 @@ def run_dqn_training(
                     dqn_env,
                     agent,
                     replay,
-                    intrinsic,
+                    knownness,
+                    intrinsic_reward,
+                    shared_intrinsic,
                     q_optimizer,
                     intrinsic_optimizer,
+                    reward_intrinsic_optimizer,
                     runner.max_episode_steps,
                 ),
                 state,
@@ -476,17 +518,36 @@ def run_dqn_training(
                 dqn_env,
                 agent,
                 replay,
-                intrinsic,
+                knownness,
+                intrinsic_reward,
+                shared_intrinsic,
                 q_optimizer,
                 intrinsic_optimizer,
+                reward_intrinsic_optimizer,
                 runner.max_episode_steps,
                 runner.train_steps or 0,
             )
 
         final_state, train_history = train_scan(initial_state)
 
-    count_entries, count_overflow = _count_table_status(final_state.intrinsic_state, intrinsic)
-    _handle_count_table_overflow(intrinsic, count_overflow)
+    knownness_count_entries, knownness_count_overflow = _count_table_status(
+        final_state.intrinsic_state,
+        knownness,
+    )
+    reward_count_entries, reward_count_overflow = (
+        (knownness_count_entries, knownness_count_overflow)
+        if shared_intrinsic
+        else _count_table_status(final_state.reward_intrinsic_state, intrinsic_reward)
+    )
+    count_entries, count_overflow = _merge_count_table_status(
+        knownness_count_entries,
+        knownness_count_overflow,
+        reward_count_entries,
+        reward_count_overflow,
+    )
+    _handle_count_table_overflow(knownness, knownness_count_overflow)
+    if not shared_intrinsic:
+        _handle_count_table_overflow(intrinsic_reward, reward_count_overflow)
 
     if runner.eval_episodes > 0:
 
@@ -499,7 +560,7 @@ def run_dqn_training(
                     final_state.intrinsic_state,
                     dqn_env,
                     agent,
-                    intrinsic,
+                    knownness,
                     runner.max_episode_steps,
                 ),
                 eval_key,
@@ -526,7 +587,12 @@ def run_dqn_training(
         train_lengths_np = train_lengths_np[:episode_count]
         train_losses_np = train_losses_np[:episode_count]
     replay_arrays = (
-        _replay_arrays(final_state.replay_state, intrinsic)
+        _replay_arrays(
+            final_state.replay_state,
+            knownness,
+            intrinsic_reward,
+            shared_intrinsic=shared_intrinsic,
+        )
         if replay.save_dataset_path
         else None
     )
@@ -537,7 +603,13 @@ def run_dqn_training(
 
     return DqnRunResult(
         params=final_state.params,
-        aux_params=_aux_params(final_state.intrinsic_state, intrinsic),
+        aux_params=_aux_params_for_roles(
+            final_state.intrinsic_state,
+            knownness,
+            final_state.reward_intrinsic_state,
+            intrinsic_reward,
+            shared_intrinsic=shared_intrinsic,
+        ),
         train_returns=train_returns_np,
         train_discounted_returns=train_discounted_returns_np,
         train_lengths=train_lengths_np,
@@ -560,9 +632,12 @@ def _train_episode(
     dqn_env: _DqnEnvironment,
     agent: DqnAgentConfig,
     replay: DqnReplayConfig,
-    intrinsic: DqnIntrinsicConfig,
+    knownness: DqnIntrinsicConfig,
+    intrinsic_reward: DqnIntrinsicConfig,
+    shared_intrinsic: bool,
     q_optimizer: optax.GradientTransformation,
     intrinsic_optimizer: optax.GradientTransformation,
+    reward_intrinsic_optimizer: optax.GradientTransformation,
     max_episode_steps: int,
 ) -> tuple[DqnTrainState, tuple[jax.Array, jax.Array, jax.Array, jax.Array]]:
     key, reset_key = jax.random.split(state.key)
@@ -613,12 +688,17 @@ def _train_episode(
                 train_state.key,
                 5,
             )
-            state_id = _oracle_state_id(dqn_env, env_state, intrinsic)
+            state_id = _oracle_state_id_for_intrinsics(
+                dqn_env,
+                env_state,
+                knownness,
+                intrinsic_reward,
+            )
             action = _select_action(
                 agent,
                 train_state.params,
                 train_state.intrinsic_state,
-                intrinsic,
+                knownness,
                 observation,
                 action_key,
                 dqn_env.num_actions,
@@ -629,13 +709,28 @@ def _train_episode(
             next_env_state = dqn_env.step(env_state, action, env_key)
             next_source_observation = dqn_env.observation(next_env_state)
             next_observation = dqn_env.encode(next_source_observation)
-            next_state_id = _oracle_state_id(dqn_env, next_env_state, intrinsic)
+            next_state_id = _oracle_state_id_for_intrinsics(
+                dqn_env,
+                next_env_state,
+                knownness,
+                intrinsic_reward,
+            )
             reward = dqn_env.reward(next_env_state).astype(jnp.float32)
             terminal = dqn_env.done(next_env_state)
+            knownness_target_key, reward_target_key = jax.random.split(replay_key)
             intrinsic_target = _sample_intrinsic_target(
-                intrinsic,
-                replay_key,
+                knownness,
+                knownness_target_key,
                 train_state.replay_state.intrinsic_targets.shape[-1],
+            )
+            reward_intrinsic_target = (
+                intrinsic_target
+                if shared_intrinsic
+                else _sample_intrinsic_target(
+                    intrinsic_reward,
+                    reward_target_key,
+                    train_state.replay_state.reward_intrinsic_targets.shape[-1],
+                )
             )
             replay_state = _push_replay(
                 train_state.replay_state,
@@ -649,18 +744,23 @@ def _train_episode(
                 intrinsic_target,
                 state_id,
                 next_state_id,
+                reward_intrinsic_target,
             )
-            intrinsic_state = _observe_intrinsic_transition(
+            intrinsic_state, reward_intrinsic_state = _observe_intrinsic_transition_for_roles(
                 train_state.intrinsic_state,
+                train_state.reward_intrinsic_state,
                 observation,
                 action,
-                intrinsic,
+                knownness,
+                intrinsic_reward,
+                shared_intrinsic,
                 dqn_env.num_actions,
                 state_id=state_id,
             )
             train_state = train_state._replace(
                 replay_state=replay_state,
                 intrinsic_state=intrinsic_state,
+                reward_intrinsic_state=reward_intrinsic_state,
                 key=update_key,
             )
             should_update = jnp.logical_and(
@@ -673,9 +773,12 @@ def _train_episode(
                     update_state,
                     agent,
                     replay,
-                    intrinsic,
+                    knownness,
+                    intrinsic_reward,
+                    shared_intrinsic,
                     q_optimizer,
                     intrinsic_optimizer,
+                    reward_intrinsic_optimizer,
                     dqn_env.num_actions,
                 ),
                 lambda update_state: (
@@ -727,9 +830,12 @@ def _train_steps(
     dqn_env: _DqnEnvironment,
     agent: DqnAgentConfig,
     replay: DqnReplayConfig,
-    intrinsic: DqnIntrinsicConfig,
+    knownness: DqnIntrinsicConfig,
+    intrinsic_reward: DqnIntrinsicConfig,
+    shared_intrinsic: bool,
     q_optimizer: optax.GradientTransformation,
     intrinsic_optimizer: optax.GradientTransformation,
+    reward_intrinsic_optimizer: optax.GradientTransformation,
     max_episode_steps: int,
     train_steps: int,
 ) -> tuple[DqnTrainState, tuple[jax.Array, jax.Array, jax.Array, jax.Array]]:
@@ -797,12 +903,17 @@ def _train_steps(
             train_state.key,
             6,
         )
-        state_id = _oracle_state_id(dqn_env, env_state, intrinsic)
+        state_id = _oracle_state_id_for_intrinsics(
+            dqn_env,
+            env_state,
+            knownness,
+            intrinsic_reward,
+        )
         action = _select_action(
             agent,
             train_state.params,
             train_state.intrinsic_state,
-            intrinsic,
+            knownness,
             observation,
             action_key,
             dqn_env.num_actions,
@@ -813,13 +924,28 @@ def _train_steps(
         next_env_state = dqn_env.step(env_state, action, env_key)
         next_source_observation = dqn_env.observation(next_env_state)
         next_observation = dqn_env.encode(next_source_observation)
-        next_state_id = _oracle_state_id(dqn_env, next_env_state, intrinsic)
+        next_state_id = _oracle_state_id_for_intrinsics(
+            dqn_env,
+            next_env_state,
+            knownness,
+            intrinsic_reward,
+        )
         reward = dqn_env.reward(next_env_state).astype(jnp.float32)
         terminal = dqn_env.done(next_env_state)
+        knownness_target_key, reward_target_key = jax.random.split(replay_key)
         intrinsic_target = _sample_intrinsic_target(
-            intrinsic,
-            replay_key,
+            knownness,
+            knownness_target_key,
             train_state.replay_state.intrinsic_targets.shape[-1],
+        )
+        reward_intrinsic_target = (
+            intrinsic_target
+            if shared_intrinsic
+            else _sample_intrinsic_target(
+                intrinsic_reward,
+                reward_target_key,
+                train_state.replay_state.reward_intrinsic_targets.shape[-1],
+            )
         )
         replay_state = _push_replay(
             train_state.replay_state,
@@ -833,18 +959,23 @@ def _train_steps(
             intrinsic_target,
             state_id,
             next_state_id,
+            reward_intrinsic_target,
         )
-        intrinsic_state = _observe_intrinsic_transition(
+        intrinsic_state, reward_intrinsic_state = _observe_intrinsic_transition_for_roles(
             train_state.intrinsic_state,
+            train_state.reward_intrinsic_state,
             observation,
             action,
-            intrinsic,
+            knownness,
+            intrinsic_reward,
+            shared_intrinsic,
             dqn_env.num_actions,
             state_id=state_id,
         )
         train_state = train_state._replace(
             replay_state=replay_state,
             intrinsic_state=intrinsic_state,
+            reward_intrinsic_state=reward_intrinsic_state,
             key=update_key,
         )
         should_update = jnp.logical_and(
@@ -857,9 +988,12 @@ def _train_steps(
                 update_state,
                 agent,
                 replay,
-                intrinsic,
+                knownness,
+                intrinsic_reward,
+                shared_intrinsic,
                 q_optimizer,
                 intrinsic_optimizer,
+                reward_intrinsic_optimizer,
                 dqn_env.num_actions,
             ),
             lambda update_state: (
@@ -1033,13 +1167,16 @@ def _replay_updates(
     state: DqnTrainState,
     agent: DqnAgentConfig,
     replay: DqnReplayConfig,
-    intrinsic: DqnIntrinsicConfig,
+    knownness: DqnIntrinsicConfig,
+    intrinsic_reward: DqnIntrinsicConfig,
+    shared_intrinsic: bool,
     q_optimizer: optax.GradientTransformation,
     intrinsic_optimizer: optax.GradientTransformation,
+    reward_intrinsic_optimizer: optax.GradientTransformation,
     num_actions: int,
 ) -> tuple[DqnTrainState, jax.Array]:
     intrinsic_updates = _intrinsic_updates_per_step(replay)
-    if intrinsic.kind == "none":
+    if knownness.kind == "none" and intrinsic_reward.kind == "none":
         intrinsic_updates = 0
     q_network_updates = _q_network_updates_per_step(replay)
 
@@ -1048,11 +1185,14 @@ def _replay_updates(
         key, sample_key = jax.random.split(train_state.key)
         batch = _sample_replay(train_state.replay_state, sample_key, replay.batch_size)
         train_state = train_state._replace(key=key)
-        train_state, loss = _intrinsic_update_from_batch(
+        train_state, loss = _intrinsic_update_roles_from_batch(
             train_state,
             batch,
-            intrinsic,
+            knownness,
+            intrinsic_reward,
+            shared_intrinsic,
             intrinsic_optimizer,
+            reward_intrinsic_optimizer,
             num_actions,
         )
         return (train_state, loss_sum + loss), loss
@@ -1067,7 +1207,8 @@ def _replay_updates(
             train_state,
             batch,
             agent,
-            intrinsic,
+            knownness,
+            intrinsic_reward,
             q_optimizer,
             num_actions,
             q_loss_key,
@@ -1104,35 +1245,104 @@ def _replay_updates(
     return state, intrinsic_loss + q_loss
 
 
-def _intrinsic_update_from_batch(
+def _intrinsic_update_roles_from_batch(
     state: DqnTrainState,
     batch: dict[str, jax.Array],
-    intrinsic: DqnIntrinsicConfig,
+    knownness: DqnIntrinsicConfig,
+    intrinsic_reward: DqnIntrinsicConfig,
+    shared_intrinsic: bool,
     intrinsic_optimizer: optax.GradientTransformation,
+    reward_intrinsic_optimizer: optax.GradientTransformation,
     num_actions: int,
 ) -> tuple[DqnTrainState, jax.Array]:
-    _intrinsic_rewards, intrinsic_state, intrinsic_loss = _intrinsic_update(
+    if shared_intrinsic:
+        intrinsic_state, intrinsic_step, intrinsic_loss = _intrinsic_update_role(
+            state.intrinsic_state,
+            state.intrinsic_gradient_step,
+            batch,
+            knownness,
+            intrinsic_optimizer,
+            num_actions,
+            target_field="intrinsic_targets",
+        )
+        return (
+            state._replace(
+                intrinsic_state=intrinsic_state,
+                reward_intrinsic_state=intrinsic_state,
+                intrinsic_gradient_step=intrinsic_step,
+                reward_intrinsic_gradient_step=intrinsic_step,
+            ),
+            intrinsic_loss,
+        )
+
+    intrinsic_state, intrinsic_step, intrinsic_loss = _intrinsic_update_role(
         state.intrinsic_state,
+        state.intrinsic_gradient_step,
         batch,
-        intrinsic,
+        knownness,
         intrinsic_optimizer,
         num_actions,
-        state.intrinsic_gradient_step + 1,
+        target_field="intrinsic_targets",
+    )
+    reward_intrinsic_state, reward_intrinsic_step, reward_intrinsic_loss = (
+        _intrinsic_update_role(
+            state.reward_intrinsic_state,
+            state.reward_intrinsic_gradient_step,
+            batch,
+            intrinsic_reward,
+            reward_intrinsic_optimizer,
+            num_actions,
+            target_field="reward_intrinsic_targets",
+        )
     )
     return (
         state._replace(
             intrinsic_state=intrinsic_state,
-            intrinsic_gradient_step=state.intrinsic_gradient_step + 1,
+            reward_intrinsic_state=reward_intrinsic_state,
+            intrinsic_gradient_step=intrinsic_step,
+            reward_intrinsic_gradient_step=reward_intrinsic_step,
         ),
-        intrinsic_loss,
+        intrinsic_loss + reward_intrinsic_loss,
     )
+
+
+def _intrinsic_update_role(
+    intrinsic_state: DqnIntrinsicState,
+    intrinsic_gradient_step: jax.Array,
+    batch: dict[str, jax.Array],
+    intrinsic: DqnIntrinsicConfig,
+    intrinsic_optimizer: optax.GradientTransformation,
+    num_actions: int,
+    *,
+    target_field: str,
+) -> tuple[DqnIntrinsicState, jax.Array, jax.Array]:
+    if intrinsic.kind == "none":
+        return (
+            intrinsic_state,
+            intrinsic_gradient_step,
+            jnp.asarray(0.0, dtype=jnp.float32),
+        )
+    next_gradient_step = intrinsic_gradient_step + 1
+    role_batch = batch
+    if target_field != "intrinsic_targets":
+        role_batch = {**batch, "intrinsic_targets": batch[target_field]}
+    _intrinsic_rewards, intrinsic_state, intrinsic_loss = _intrinsic_update(
+        intrinsic_state,
+        role_batch,
+        intrinsic,
+        intrinsic_optimizer,
+        num_actions,
+        next_gradient_step,
+    )
+    return intrinsic_state, next_gradient_step, intrinsic_loss
 
 
 def _q_update_from_batch(
     state: DqnTrainState,
     batch: dict[str, jax.Array],
     agent: DqnAgentConfig,
-    intrinsic: DqnIntrinsicConfig,
+    knownness: DqnIntrinsicConfig,
+    intrinsic_reward: DqnIntrinsicConfig,
     q_optimizer: optax.GradientTransformation,
     num_actions: int,
     key: jax.Array,
@@ -1144,23 +1354,21 @@ def _q_update_from_batch(
     terminals = batch["terminals"]
     rmax_known_mask, rmax_next_unknown = _rmax_batch_masks(
         state.intrinsic_state,
-        intrinsic,
+        knownness,
         agent,
         batch,
         num_actions,
     )
     intrinsic_rewards = _batch_intrinsic_rewards(
-        state.intrinsic_state,
+        state.reward_intrinsic_state,
         batch,
-        intrinsic,
+        intrinsic_reward,
         num_actions,
-    )
-    intrinsic_reward_scale = (
-        0.0 if agent.algorithm == "dqn_rmax" else intrinsic.intrinsic_reward_scale
     )
     total_rewards = (
         rewards
-        + intrinsic_reward_scale * jax.lax.stop_gradient(intrinsic_rewards)
+        + intrinsic_reward.intrinsic_reward_scale
+        * jax.lax.stop_gradient(intrinsic_rewards)
     )
 
     def q_loss_fn(params):
@@ -1744,15 +1952,32 @@ def _oracle_state_id(
     return jnp.asarray(0, dtype=jnp.int32)
 
 
+def _oracle_state_id_for_intrinsics(
+    dqn_env: _DqnEnvironment,
+    env_state: Any,
+    knownness: DqnIntrinsicConfig,
+    intrinsic_reward: DqnIntrinsicConfig,
+) -> jax.Array:
+    if _count_uses_oracle_tabular(knownness) or _count_uses_oracle_tabular(
+        intrinsic_reward
+    ):
+        if dqn_env.oracle_state_id is None:
+            raise ValueError("count_key_mode='oracle_tabular' requires an environment oracle_state_id")
+        return jnp.asarray(dqn_env.oracle_state_id(env_state), dtype=jnp.int32)
+    return jnp.asarray(0, dtype=jnp.int32)
+
+
 def _initial_replay_state(
     capacity: int,
     input_dim: int,
     intrinsic_target_dim: int,
     source_observation_shape: tuple[int, ...],
     source_observation_dtype: str,
+    reward_intrinsic_target_dim: int | None = None,
 ) -> DqnReplayState:
     source_shape = (capacity, *source_observation_shape)
     source_dtype = np.dtype(source_observation_dtype)
+    reward_intrinsic_target_dim = reward_intrinsic_target_dim or 1
     return DqnReplayState(
         observations=jnp.zeros((capacity, input_dim), dtype=jnp.float32),
         actions=jnp.zeros((capacity,), dtype=jnp.int32),
@@ -1760,6 +1985,10 @@ def _initial_replay_state(
         next_observations=jnp.zeros((capacity, input_dim), dtype=jnp.float32),
         terminals=jnp.zeros((capacity,), dtype=jnp.float32),
         intrinsic_targets=jnp.zeros((capacity, intrinsic_target_dim), dtype=jnp.float32),
+        reward_intrinsic_targets=jnp.zeros(
+            (capacity, reward_intrinsic_target_dim),
+            dtype=jnp.float32,
+        ),
         state_ids=jnp.zeros((capacity,), dtype=jnp.int32),
         next_state_ids=jnp.zeros((capacity,), dtype=jnp.int32),
         source_observations=jnp.zeros(source_shape, dtype=source_dtype),
@@ -1781,9 +2010,15 @@ def _push_replay(
     intrinsic_target: jax.Array,
     state_id: jax.Array,
     next_state_id: jax.Array,
+    reward_intrinsic_target: jax.Array | None = None,
 ) -> DqnReplayState:
     index = state.index
     capacity = state.observations.shape[0]
+    if reward_intrinsic_target is None:
+        reward_intrinsic_target = jnp.zeros(
+            (state.reward_intrinsic_targets.shape[-1],),
+            dtype=jnp.float32,
+        )
     return DqnReplayState(
         observations=state.observations.at[index].set(observation),
         actions=state.actions.at[index].set(action.astype(jnp.int32)),
@@ -1791,6 +2026,9 @@ def _push_replay(
         next_observations=state.next_observations.at[index].set(next_observation),
         terminals=state.terminals.at[index].set(terminal.astype(jnp.float32)),
         intrinsic_targets=state.intrinsic_targets.at[index].set(intrinsic_target),
+        reward_intrinsic_targets=state.reward_intrinsic_targets.at[index].set(
+            reward_intrinsic_target
+        ),
         state_ids=state.state_ids.at[index].set(state_id.astype(jnp.int32)),
         next_state_ids=state.next_state_ids.at[index].set(next_state_id.astype(jnp.int32)),
         source_observations=state.source_observations.at[index].set(
@@ -1817,6 +2055,7 @@ def _sample_replay(
         "next_observations": state.next_observations[indices],
         "terminals": state.terminals[indices],
         "intrinsic_targets": state.intrinsic_targets[indices],
+        "reward_intrinsic_targets": state.reward_intrinsic_targets[indices],
         "state_ids": state.state_ids[indices],
         "next_state_ids": state.next_state_ids[indices],
     }
@@ -1926,7 +2165,10 @@ def _replay_intrinsic_target_dim(intrinsic: DqnIntrinsicConfig) -> int:
 
 def _replay_arrays(
     state: DqnReplayState,
-    intrinsic: DqnIntrinsicConfig,
+    knownness: DqnIntrinsicConfig,
+    intrinsic_reward: DqnIntrinsicConfig,
+    *,
+    shared_intrinsic: bool,
 ) -> dict[str, np.ndarray]:
     size = int(np.asarray(jax.device_get(state.size)))
     arrays = {
@@ -1936,8 +2178,23 @@ def _replay_arrays(
         "next_observations": np.asarray(jax.device_get(state.source_next_observations))[:size],
         "terminals": np.asarray(jax.device_get(state.terminals))[:size].astype(np.bool_),
     }
-    if intrinsic.kind == "cfn":
+    if shared_intrinsic and knownness.kind == "cfn":
         arrays["cfn_targets"] = np.asarray(jax.device_get(state.intrinsic_targets))[:size]
+    elif knownness.kind == "cfn" and intrinsic_reward.kind == "none":
+        arrays["cfn_targets"] = np.asarray(jax.device_get(state.intrinsic_targets))[:size]
+    elif intrinsic_reward.kind == "cfn" and knownness.kind == "none":
+        arrays["cfn_targets"] = np.asarray(
+            jax.device_get(state.reward_intrinsic_targets)
+        )[:size]
+    else:
+        if knownness.kind == "cfn":
+            arrays["knownness_cfn_targets"] = np.asarray(
+                jax.device_get(state.intrinsic_targets)
+            )[:size]
+        if intrinsic_reward.kind == "cfn":
+            arrays["intrinsic_reward_cfn_targets"] = np.asarray(
+                jax.device_get(state.reward_intrinsic_targets)
+            )[:size]
     return arrays
 
 
@@ -2565,6 +2822,39 @@ def _observe_count_direct_transition(
     )
 
 
+def _observe_intrinsic_transition_for_roles(
+    intrinsic_state: DqnIntrinsicState,
+    reward_intrinsic_state: DqnIntrinsicState,
+    observation: jax.Array,
+    action: jax.Array,
+    knownness: DqnIntrinsicConfig,
+    intrinsic_reward: DqnIntrinsicConfig,
+    shared_intrinsic: bool,
+    num_actions: int,
+    *,
+    state_id: jax.Array | None = None,
+) -> tuple[DqnIntrinsicState, DqnIntrinsicState]:
+    intrinsic_state = _observe_intrinsic_transition(
+        intrinsic_state,
+        observation,
+        action,
+        knownness,
+        num_actions,
+        state_id=state_id,
+    )
+    if shared_intrinsic:
+        return intrinsic_state, intrinsic_state
+    reward_intrinsic_state = _observe_intrinsic_transition(
+        reward_intrinsic_state,
+        observation,
+        action,
+        intrinsic_reward,
+        num_actions,
+        state_id=state_id,
+    )
+    return intrinsic_state, reward_intrinsic_state
+
+
 def _count_raw_bonus(
     state: DqnIntrinsicState,
     observations: jax.Array,
@@ -2930,6 +3220,20 @@ def _count_table_status(
     )
 
 
+def _merge_count_table_status(
+    knownness_entries: int | None,
+    knownness_overflow: bool | None,
+    reward_entries: int | None,
+    reward_overflow: bool | None,
+) -> tuple[int | None, bool | None]:
+    entries = knownness_entries if knownness_entries is not None else reward_entries
+    if knownness_overflow is None:
+        return entries, reward_overflow
+    if reward_overflow is None:
+        return entries, knownness_overflow
+    return entries, bool(knownness_overflow or reward_overflow)
+
+
 def _handle_count_table_overflow(
     intrinsic: DqnIntrinsicConfig,
     overflow: bool | None,
@@ -3009,6 +3313,36 @@ def _aux_params(
             params["simhash_autoencoder"] = state.predictor_params
         return params
     return {}
+
+
+def _aux_params_for_roles(
+    knownness_state: DqnIntrinsicState,
+    knownness: DqnIntrinsicConfig,
+    reward_state: DqnIntrinsicState,
+    intrinsic_reward: DqnIntrinsicConfig,
+    *,
+    shared_intrinsic: bool,
+) -> dict[str, tuple[dict[str, jax.Array], ...]]:
+    if shared_intrinsic:
+        return _aux_params(knownness_state, knownness)
+    if knownness.kind == "none":
+        return _aux_params(reward_state, intrinsic_reward)
+    if intrinsic_reward.kind == "none":
+        return _aux_params(knownness_state, knownness)
+    aux: dict[str, tuple[dict[str, jax.Array], ...]] = {}
+    aux.update(
+        {
+            f"knownness_{name}": params
+            for name, params in _aux_params(knownness_state, knownness).items()
+        }
+    )
+    aux.update(
+        {
+            f"intrinsic_reward_{name}": params
+            for name, params in _aux_params(reward_state, intrinsic_reward).items()
+        }
+    )
+    return aux
 
 
 def _coerce_navix_settings(settings: dict[str, Any]) -> dict[str, Any]:
