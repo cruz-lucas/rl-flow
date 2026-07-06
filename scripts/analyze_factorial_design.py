@@ -23,7 +23,14 @@ from rlflow.analysis.loading import load_histories, load_sweep_manifest, non_see
 #     {"experiment": 1, "factor_a": -1, "factor_b": -1, "factor_c": -1},
 #     {"experiment": 2, "factor_a": +1, "factor_b": -1, "factor_c": -1},
 # ]
-EMBEDDED_DESIGN: list[dict[str, Any]] = []
+
+# EMBEDDED_DESIGN: list[dict[str, Any]] = []
+EMBEDDED_DESIGN = [
+    {"experiment": 1, "Replay": -1, "R-MAX Optimism": -1},
+    {"experiment": 2, "Replay": +1, "R-MAX Optimism": -1},
+    {"experiment": 3, "Replay": -1, "R-MAX Optimism": 1},
+    {"experiment": 4, "Replay": +1, "R-MAX Optimism": 1},
+]
 
 RESPONSE_COLUMN = "average_discounted_return"
 JOIN_PRIORITY = (
@@ -95,6 +102,7 @@ def main() -> None:
     )
 
     warnings: list[str] = []
+    welch_anova: dict[str, Any] | None = None
     if not factor_columns:
         warnings.append(
             "No two-level factor columns were found. Wrote response summaries only."
@@ -116,6 +124,15 @@ def main() -> None:
         model_summary = fit["model_summary"]
         warnings.extend(fit["warnings"])
 
+    if args.welch_anova:
+        if not factor_columns:
+            raise SystemExit("--welch-anova requires at least one two-level factor column")
+        welch_anova = fit_welch_anova(
+            coded,
+            factor_columns=factor_columns,
+            response_column=RESPONSE_COLUMN,
+        )
+
     cell_summary = summarize_cells(coded, factor_columns)
 
     response_csv = out_dir / "trial_responses.csv"
@@ -124,6 +141,7 @@ def main() -> None:
     coding_json = out_dir / "factor_coding.json"
     report_txt = out_dir / "factorial_report.txt"
     config_json = out_dir / "analysis_config.json"
+    welch_anova_json = out_dir / "welch_anova.json"
 
     write_dataframe_csv(coded.drop(columns=internal_columns(coded)), response_csv)
     write_dataframe_csv(cell_summary, cell_csv)
@@ -141,6 +159,7 @@ def main() -> None:
                 "factor_columns": factor_columns,
                 "max_order": args.max_order,
                 "fallback_to_return": args.fallback_to_return,
+                "welch_anova": args.welch_anova,
             },
             indent=2,
             sort_keys=True,
@@ -155,10 +174,16 @@ def main() -> None:
             effects=effects,
             factor_columns=factor_columns,
             model_summary=model_summary,
+            welch_anova=welch_anova,
             warnings=warnings,
         ),
         encoding="utf-8",
     )
+    if welch_anova is not None:
+        welch_anova_json.write_text(
+            json.dumps(welch_anova, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
 
     plot_paths: list[Path] = []
     if factor_columns and not args.no_plots:
@@ -170,6 +195,8 @@ def main() -> None:
     print(f"factor_coding_json: {coding_json}")
     print(f"analysis_config_json: {config_json}")
     print(f"report_txt: {report_txt}")
+    if welch_anova is not None:
+        print(f"welch_anova_json: {welch_anova_json}")
     for path in plot_paths:
         print(f"plot: {path}")
     for warning in warnings:
@@ -236,6 +263,14 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--out", type=Path, default=Path("runs/analysis/factorial_design"))
     parser.add_argument("--no-plots", action="store_true")
+    parser.add_argument(
+        "--welch-anova",
+        action="store_true",
+        help=(
+            "Run an additional one-way Welch ANOVA across the observed factorial "
+            "design cells."
+        ),
+    )
     args = parser.parse_args()
 
     if args.last_n is not None and args.last_n < 1:
@@ -766,6 +801,91 @@ def f_survival(f_stat: float, df_num: int, df_den: int) -> float:
     return float(f_distribution.sf(f_stat, df_num, df_den))
 
 
+def fit_welch_anova(
+    data: pd.DataFrame,
+    *,
+    factor_columns: Sequence[str],
+    response_column: str,
+) -> dict[str, Any]:
+    """Run a one-way Welch ANOVA over the observed factorial design cells."""
+    coded_columns = [coded_factor_column(factor) for factor in factor_columns]
+    groups = list(data.groupby(coded_columns, dropna=False, sort=True))
+    if len(groups) < 2:
+        raise SystemExit("Welch ANOVA requires at least two observed design cells")
+
+    sample_sizes: list[int] = []
+    means: list[float] = []
+    variances: list[float] = []
+    for cell_key, group in groups:
+        values = pd.to_numeric(group[response_column], errors="coerce").to_numpy(dtype=float)
+        cell = format_design_cell(cell_key, factor_columns)
+        if not np.isfinite(values).all():
+            raise SystemExit(f"Welch ANOVA cell {cell} contains non-finite responses")
+        if len(values) < 2:
+            raise SystemExit(
+                f"Welch ANOVA requires at least two responses per design cell; "
+                f"{cell} has {len(values)}"
+            )
+        variance = float(np.var(values, ddof=1))
+        if variance <= 0.0:
+            raise SystemExit(
+                f"Welch ANOVA requires positive within-cell variance; {cell} has zero variance"
+            )
+        sample_sizes.append(len(values))
+        means.append(float(np.mean(values)))
+        variances.append(variance)
+
+    nobs = np.asarray(sample_sizes, dtype=float)
+    group_means = np.asarray(means, dtype=float)
+    group_variances = np.asarray(variances, dtype=float)
+    weights = nobs / group_variances
+    weight_sum = float(weights.sum())
+    weighted_mean = float(np.dot(weights, group_means) / weight_sum)
+    group_count = len(groups)
+
+    numerator = float(np.dot(weights, (group_means - weighted_mean) ** 2)) / (
+        group_count - 1
+    )
+    relative_weights = weights / weight_sum
+    variance_term = float(
+        np.sum(((1.0 - relative_weights) ** 2) / (nobs - 1.0))
+    )
+    correction = 1.0 + (
+        2.0 * (group_count - 2) * variance_term / (group_count**2 - 1.0)
+    )
+    f_statistic = numerator / correction
+    df_numerator = float(group_count - 1)
+    df_denominator = float((group_count**2 - 1.0) / (3.0 * variance_term))
+
+    try:
+        from scipy.stats import f as f_distribution
+    except Exception as exc:
+        raise SystemExit("Welch ANOVA requires scipy") from exc
+    p_value = float(f_distribution.sf(f_statistic, df_numerator, df_denominator))
+
+    return {
+        "method": "welch_one_way",
+        "grouping": "factorial_design_cells",
+        "response": response_column,
+        "factors": list(factor_columns),
+        "observation_count": int(sum(sample_sizes)),
+        "group_count": group_count,
+        "f_statistic": f_statistic,
+        "df_numerator": df_numerator,
+        "df_denominator": df_denominator,
+        "p_value": p_value,
+    }
+
+
+def format_design_cell(cell_key: Any, factor_columns: Sequence[str]) -> str:
+    values = cell_key if isinstance(cell_key, tuple) else (cell_key,)
+    assignments = ", ".join(
+        f"{factor}={int(value)}"
+        for factor, value in zip(factor_columns, values, strict=True)
+    )
+    return f"({assignments})"
+
+
 def term_label(term: Sequence[str]) -> str:
     return ":".join(term)
 
@@ -805,6 +925,7 @@ def format_report(
     effects: pd.DataFrame,
     factor_columns: Sequence[str],
     model_summary: dict[str, Any],
+    welch_anova: dict[str, Any] | None,
     warnings: Sequence[str],
 ) -> str:
     lines = [
@@ -831,6 +952,20 @@ def format_report(
                 f"Residual df: {model_summary.get('df_resid')}",
                 f"Residual MSE: {format_number(model_summary.get('mse_resid'))}",
                 f"Balanced replicates per cell: {balanced_text}",
+            ]
+        )
+
+    if welch_anova is not None:
+        lines.extend(
+            [
+                "",
+                "Welch ANOVA (Design Cells)",
+                f"Groups: {welch_anova['group_count']}",
+                f"Observations: {welch_anova['observation_count']}",
+                f"F: {format_number(welch_anova['f_statistic'])}",
+                f"Numerator df: {format_number(welch_anova['df_numerator'])}",
+                f"Denominator df: {format_number(welch_anova['df_denominator'])}",
+                f"p-value: {format_number(welch_anova['p_value'])}",
             ]
         )
 
