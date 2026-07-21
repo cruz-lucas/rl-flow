@@ -1,0 +1,26 @@
+name: navix_dqn_empty_room_sweep
+description: Example seed sweep over the Navix DQN EmptyRoom workflow (SLURM array).
+sweep_id: navix-dqn-empty-room-sweep
+workflow: ../workflows/navix_dqn_empty_room.yaml
+method: grid
+metric:
+  goal: maximize
+  last_n: 500
+  name: mean_train_return_last_n
+execution:
+  backend: slurm
+  options:
+    account: def-account
+    time: "01:00:00"
+    cpus_per_task: 4
+    mem: 16G
+    modules:
+      - python/3.11
+    env:
+      XLA_PYTHON_CLIENT_PREALLOCATE: "false"
+slurm:
+  max_parallel: 8
+parameters:
+  seed:
+    target: nodes.runner.config.seed
+    values: [0, 1, 2, 3, 4]
