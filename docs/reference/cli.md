@@ -11,6 +11,7 @@ Subcommands:
 - `rlflow compile`
 - `rlflow components`
 - `rlflow jobs`
+- `rlflow report`
 - `rlflow run`
 - `rlflow sweep`
 - `rlflow workflow`
@@ -52,6 +53,7 @@ Options:
 
 Subcommands:
 
+- `rlflow components describe`
 - `rlflow components list`
 
 Usage:
@@ -59,6 +61,28 @@ Usage:
 ```bash
 rlflow components COMMAND [ARGS]...
 ```
+
+## `rlflow components describe`
+
+Show a component's ports, config keys, and defaults for authoring workflow YAML.
+
+Usage:
+
+```bash
+rlflow components describe [OPTIONS] COMPONENT_ID
+```
+
+Arguments:
+
+| Name | Required |
+| --- | --- |
+| `component_id` | yes |
+
+Options:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--json` |  | Print the raw config schema as JSON. |
 
 ## `rlflow components list`
 
@@ -124,6 +148,29 @@ Arguments:
 | Name | Required |
 | --- | --- |
 | `job_id` | yes |
+
+## `rlflow report`
+
+Summarize a single run's status, metrics, and learning curve.
+
+Usage:
+
+```bash
+rlflow report [OPTIONS] RUN_DIR
+```
+
+Arguments:
+
+| Name | Required |
+| --- | --- |
+| `run_dir` | yes |
+
+Options:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--plot, --no-plot` | `True` | Also write a learning-curve PNG. |
+| `--out` |  | Directory for the plot (default: <run_dir>/plots). |
 
 ## `rlflow run`
 

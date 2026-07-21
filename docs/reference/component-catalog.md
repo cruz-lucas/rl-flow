@@ -9,6 +9,7 @@ This catalog is generated from the active default component registry.
 | `builtin` | `agent` | `builtin.agent.dqn_jax` | DQN JAX |
 | `builtin` | `agent` | `builtin.agent.dqn_rmax_jax` | DQN + R-Max JAX |
 | `builtin` | `agent` | `builtin.agent.q_learning_tabular` | Q-Learning Tabular |
+| `builtin` | `agent` | `builtin.agent.rmax_tabular` | R-Max Tabular |
 | `builtin` | `agent` | `builtin.agent.sarsa_tabular` | Sarsa Tabular |
 | `builtin` | `environment` | `builtin.env.gridworld` | Gridworld Environment |
 | `builtin` | `environment` | `builtin.env.riverswim` | RiverSwim Environment |
@@ -35,9 +36,7 @@ Standalone JAX DQN agent with an MLP Q-network and target network.
 
 ### Input Ports
 
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `knownness_signal` | `intrinsic_reward` | no | Intrinsic module whose bonus is used as the R-Max knownness signal. |
+None.
 
 ### Output Ports
 
@@ -92,7 +91,9 @@ DQN agent that treats high intrinsic-bonus state-action pairs as unknown and ass
 
 ### Input Ports
 
-None.
+| Name | Type | Required | Description |
+| --- | --- | --- | --- |
+| `knownness_signal` | `intrinsic_reward` | no | Intrinsic module whose bonus is used as the R-Max knownness signal. |
 
 ### Output Ports
 
@@ -166,6 +167,33 @@ None.
 | `discount` | `number` | no | `0.99` |  |
 | `initial_q` | `number` | no | `0.0` |  |
 | `learning_rate` | `number` | no | `0.2` |  |
+
+## `builtin.agent.rmax_tabular`
+
+**Kind:** `agent`  
+**Source:** `builtin`  
+**Version:** `0.1.0`
+
+Model-based tabular R-Max agent with optimistic unknown state-action values.
+
+### Input Ports
+
+None.
+
+### Output Ports
+
+| Name | Type | Required | Description |
+| --- | --- | --- | --- |
+| `agent` | `agent` | yes |  |
+
+### Config Fields
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `discount` | `number` | no | `0.99` |  |
+| `known_count_threshold` | `integer` | no | `1` |  |
+| `planning_iterations` | `integer` | no | `25` |  |
+| `rmax_v_max` | `number` | no | `1.0` |  |
 
 ## `builtin.agent.sarsa_tabular`
 

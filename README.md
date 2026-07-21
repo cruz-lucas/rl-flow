@@ -45,17 +45,21 @@ Open `http://localhost:5173`.
 ## Validate and Compile a Navix DQN Workflow
 
 ```bash
-uv run python -m rlflow.cli workflow validate configs/workflows/navix_dqn_empty_room.yaml
-uv run python -m rlflow.cli compile configs/workflows/navix_dqn_empty_room.yaml --out runs/test
+uv run rlflow workflow validate configs/workflows/navix_dqn_empty_room.yaml
+uv run rlflow compile configs/workflows/navix_dqn_empty_room.yaml --out runs/examples/navix-dqn
 ```
 
 Run locally:
 
 ```bash
-uv run python -m rlflow.cli run configs/workflows/navix_dqn_empty_room.yaml --backend local
+uv run rlflow run configs/workflows/navix_dqn_empty_room.yaml --backend local
 ```
 
-The local command writes logs, resolved config, metrics, and optional checkpoints into the run directory.
+The local command writes logs, resolved config, metrics, and optional checkpoints into the run directory. Runs land under `runs/` (gitignored). Summarize any run — status, metrics, and a learning-curve plot — with:
+
+```bash
+uv run rlflow report runs/examples/navix-dqn
+```
 
 ## SLURM
 
@@ -80,7 +84,7 @@ Compilation writes `slurm_job.sh`. Submission uses `sbatch` if available.
 Sweeps are YAML files that point at a workflow and override node config paths. A grid sweep can be compiled into per-trial run directories plus one SLURM array script:
 
 ```bash
-uv run python -m rlflow.cli sweep compile configs/sweeps/navix_dqn_compute_canada.yaml --out runs/sweeps/navix-dqn
+uv run rlflow sweep compile configs/sweeps/navix_dqn_empty_room.yaml --out runs/sweeps/navix-dqn
 ```
 
 When a sweep includes a seed parameter, seed trials for the same non-seed configuration are nested under one group directory, for example `trials/group-0000/seed-0` and `trials/group-0000/seed-1`. Summaries and result plots use that grouping to average seed replicates for the same workflow configuration.
@@ -88,7 +92,7 @@ When a sweep includes a seed parameter, seed trials for the same non-seed config
 On a Compute Canada / Alliance login node, edit the sweep `account`, modules, and environment setup, then submit the array from that cluster checkout:
 
 ```bash
-uv run python -m rlflow.cli sweep run configs/sweeps/navix_dqn_compute_canada.yaml --out runs/sweeps/navix-dqn
+uv run rlflow sweep run configs/sweeps/navix_dqn_empty_room.yaml --out runs/sweeps/navix-dqn
 ```
 
 For large sweeps on clusters with queued-job limits, set `slurm.trials_per_task` to batch multiple trials into each array element:
@@ -105,9 +109,9 @@ slurm:
 After jobs finish:
 
 ```bash
-uv run python -m rlflow.cli sweep summarize runs/sweeps/navix-dqn
-uv run python -m rlflow.cli sweep summarize runs/sweeps/navix-dqn --metric mean_train_return_last_n --metric-last-n 50
-uv run python -m rlflow.cli sweep report runs/sweeps/navix-dqn --metric mean_train_return_last_n --metric-last-n 50 --out runs/sweeps/navix-dqn/analysis
+uv run rlflow sweep summarize runs/sweeps/navix-dqn
+uv run rlflow sweep summarize runs/sweeps/navix-dqn --metric mean_train_return_last_n --metric-last-n 50
+uv run rlflow sweep report runs/sweeps/navix-dqn --metric mean_train_return_last_n --metric-last-n 50 --out runs/sweeps/navix-dqn/analysis
 ```
 
 `sweep report` is intended for headless cluster sessions: it prints a ranked terminal table, averages seed replicates by non-seed hyperparameters, and optionally writes `sweep_report.txt`, `sweep_summary.json`, and `sweep_groups.csv`.
