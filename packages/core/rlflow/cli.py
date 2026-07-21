@@ -81,6 +81,68 @@ def list_components(
         )
 
 
+@components_app.command("describe")
+def describe_component(
+    component_id: str = typer.Argument(
+        ..., help="Component id, e.g. builtin.agent.q_learning_tabular."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Print the raw config schema as JSON."),
+) -> None:
+    """Show a component's ports, config keys, and defaults for authoring workflow YAML."""
+    component = _registry().maybe_get(component_id)
+    if component is None:
+        typer.echo(f"Unknown component: {component_id}", err=True)
+        raise typer.Exit(code=1)
+
+    if as_json:
+        typer.echo(
+            json.dumps(
+                {
+                    "id": component.id,
+                    "kind": str(component.kind),
+                    "config_schema": component.config_schema,
+                    "defaults": component.defaults,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+
+    typer.echo(f"{component.id}  ({component.kind}, source={component.source})")
+    if component.display_name:
+        typer.echo(f"  {component.display_name}")
+    if component.description:
+        typer.echo(f"  {component.description}")
+
+    def _echo_ports(label: str, ports: list[Any]) -> None:
+        if not ports:
+            return
+        typer.echo(f"\n{label}:")
+        for port in ports:
+            optional = "" if port.required else " (optional)"
+            typer.echo(f"  - {port.name}: {port.type}{optional}")
+
+    _echo_ports("Inputs", component.input_ports)
+    _echo_ports("Outputs", component.output_ports)
+
+    properties = (component.config_schema or {}).get("properties", {})
+    required = set((component.config_schema or {}).get("required", []))
+    if properties:
+        typer.echo("\nConfig:")
+        for key, schema in properties.items():
+            type_name = schema.get("type", "any")
+            default = component.defaults.get(key, schema.get("default"))
+            required_txt = " [required]" if key in required else ""
+            default_txt = "" if default is None else f" default={default!r}"
+            enum = schema.get("enum")
+            enum_txt = f" choices={enum}" if enum else ""
+            typer.echo(f"  {key}: {type_name}{required_txt}{default_txt}{enum_txt}")
+            description = schema.get("description")
+            if description:
+                typer.echo(f"      {description}")
+
+
 @workflow_app.command("validate")
 def workflow_validate(path: Path) -> None:
     result = WorkflowValidator(_registry()).validate(_load_workflow(path))
@@ -122,6 +184,43 @@ def run_shortcut(
     out: Path | None = typer.Option(None, "--out"),
 ) -> None:
     run_workflow(path, backend=backend, out=out)
+
+
+@app.command("report")
+def report_run(
+    run_dir: Path = typer.Argument(..., help="A run directory produced by `rlflow run`."),
+    plot: bool = typer.Option(True, "--plot/--no-plot", help="Also write a learning-curve PNG."),
+    out: Path | None = typer.Option(
+        None, "--out", help="Directory for the plot (default: <run_dir>/plots)."
+    ),
+) -> None:
+    """Summarize a single run's status, metrics, and learning curve."""
+    try:
+        from rlflow.analysis.run_report import (
+            format_run_report,
+            plot_run_curve,
+            summarize_run,
+        )
+    except ModuleNotFoundError as exc:
+        typer.echo(_cli_error_message(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    try:
+        summary = summarize_run(run_dir)
+    except FileNotFoundError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(format_run_report(summary))
+
+    if plot:
+        try:
+            plot_path = plot_run_curve(run_dir, out)
+        except (RuntimeError, ModuleNotFoundError) as exc:
+            typer.echo(f"warning: {_cli_error_message(exc)}", err=True)
+        else:
+            if plot_path is not None:
+                typer.echo(f"\nlearning_curve: {plot_path}")
 
 
 @workflow_app.command("run")
