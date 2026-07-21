@@ -1,0 +1,80 @@
+name: navix_dqn_empty_room
+description: DQN on a Navix EmptyRoom with symbolic observations.
+execution:
+  backend: local
+  cluster: null
+  options: {}
+metadata:
+  experiment_id: navix-dqn-empty-room
+nodes:
+- id: env
+  component: navix.env.grid
+  position: {x: 208, y: 213}
+  config:
+    action_set: cardinal
+    env_name: empty_room
+    layout: fixed
+    max_steps: 100
+    observation_mode: symbolic
+    size: 8
+- id: agent
+  component: builtin.agent.dqn_jax
+  position: {x: 212, y: 70}
+  config:
+    activation: relu
+    discount: 0.99
+    double_q: false
+    eps_decay_steps: 300000
+    eps_end: 0.001
+    eps_start: 1
+    epsilon_decay_steps: 300000
+    epsilon_end: 0.001
+    epsilon_start: 1
+    eval_epsilon: 0
+    hidden_dims: null
+    hidden_units: [128, 128]
+    huber_delta: 1
+    learning_rate: 0.001
+    loss_type: mse
+    max_grad_norm: 10
+    normalization: last
+    normalize_observations: true
+    obs_normalization_clip: 5
+    obs_normalization_epsilon: 1.0e-08
+    optimizer: adam
+    optimizer_beta1: 0.9
+    optimizer_beta2: 0.999
+    optimizer_centered: false
+    optimizer_decay: 0.95
+    optimizer_epsilon: 1.0e-08
+    optimizer_momentum: 0
+    optimizer_weight_decay: 0
+    seed: 0
+    target_update_freq: 2048
+    target_update_frequency: 2048
+    update_frequency: 4
+- id: replay
+  component: builtin.replay.uniform
+  position: {x: 207, y: 351}
+  config:
+    batch_size: 128
+    capacity: 100000
+    min_size: 2048
+    save_dataset_path: ''
+    updates_per_step: 1
+- id: runner
+  component: builtin.runner.tabular_jax
+  position: {x: 531, y: 93}
+  config:
+    seed: 0
+    train_episodes: 10000
+    train_steps: 1000000
+    max_episode_steps: 100
+    eval_episodes: 0
+    checkpoint_freq: null
+    checkpoint_dir: checkpoints
+    save_final_checkpoint: false
+edges:
+- {from_node: env, from_port: environment, to_node: runner, to_port: environment}
+- {from_node: agent, from_port: agent, to_node: runner, to_port: agent}
+- {from_node: replay, from_port: replay_buffer, to_node: runner, to_port: replay_buffer}

@@ -1,0 +1,51 @@
+name: tabular_sarsa_gridworld
+description: Tabular SARSA with a UCB policy on a 4x4 Gridworld.
+execution:
+  backend: local
+  cluster: null
+  options: {}
+metadata:
+  experiment_id: tabular-sarsa-gridworld
+nodes:
+- id: env
+  component: builtin.env.gridworld
+  position: {x: 120, y: 160}
+  config:
+    width: 4
+    height: 4
+    start_state: 0
+    goal_state: 15
+    pit_states: []
+    goal_reward: 1.0
+    pit_reward: -1.0
+    step_reward: 0.0
+    slip_probability: 0.0
+- id: agent
+  component: builtin.agent.sarsa_tabular
+  position: {x: 120, y: 20}
+  config:
+    learning_rate: 0.1
+    discount: 0.99
+    initial_q: 0.0
+- id: policy
+  component: builtin.policy.ucb
+  position: {x: 120, y: 300}
+  config:
+    coefficient: 1.0
+    initial_count: 1.0
+- id: runner
+  component: builtin.runner.tabular_jax
+  position: {x: 480, y: 160}
+  config:
+    seed: 0
+    train_episodes: 60
+    train_steps: null
+    max_episode_steps: 40
+    eval_episodes: 5
+    checkpoint_freq: null
+    checkpoint_dir: checkpoints
+    save_final_checkpoint: false
+edges:
+- {from_node: env, from_port: environment, to_node: runner, to_port: environment}
+- {from_node: agent, from_port: agent, to_node: runner, to_port: agent}
+- {from_node: policy, from_port: policy, to_node: runner, to_port: policy}
