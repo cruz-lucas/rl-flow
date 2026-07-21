@@ -22,6 +22,7 @@ dependencies = [
   "jax[cuda13]>=0.4; sys_platform == 'linux'",
   "optax>=0.2",
   "navix>=0.7.4",
+  "tfp-nightly==0.26.0.dev20260524",
 ]
 
 [project.optional-dependencies]
@@ -32,6 +33,7 @@ dev = [
   "pandas>=2.2",
   "matplotlib>=3.8",
   "tabulate>=0.9",
+  "ruff>=0.6",
 ]
 analysis = [
   "pandas>=2.2",
@@ -61,4 +63,35 @@ pythonpath = [
   "packages/core",
   "packages/builtin_components",
   "apps/api",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["site", "runs", ".venv", "apps/web"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# Baseline ignore set — intentionally lenient so the gate can be introduced
+# without a flood of churn, then ratcheted tighter over time:
+#   E501 line-too-long: the codebase has many long, deliberate lines
+#         (e.g. JAX scan-carry unpacks); enable once those are wrapped.
+#   UP042 replace-str-enum: JobState / RunStatusState are `(str, Enum)`; moving
+#         them to StrEnum is serialization-sensitive, deferred to its own change.
+ignore = ["E501", "UP042"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["rlflow", "rlflow_builtin", "rlflow_api"]
+
+[tool.ruff.lint.flake8-bugbear]
+# Typer and FastAPI idiomatically use callables as argument defaults
+# (`x: int = typer.Option(...)`, `x = Depends(...)`); these are not B008 bugs.
+extend-immutable-calls = [
+  "typer.Option",
+  "typer.Argument",
+  "fastapi.Depends",
+  "fastapi.Query",
+  "fastapi.Path",
+  "fastapi.Body",
+  "fastapi.Header",
 ]
