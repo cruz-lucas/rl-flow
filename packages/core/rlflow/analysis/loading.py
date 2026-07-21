@@ -99,10 +99,7 @@ def load_histories(
     history: str = "train",
 ) -> pd.DataFrame:
     compilation = load_sweep_manifest(sweep_dir)
-    frames = [
-        load_trial_history(trial, history=history)
-        for trial in compilation.trials
-    ]
+    frames = [load_trial_history(trial, history=history) for trial in compilation.trials]
     frames = [frame for frame in frames if not frame.empty]
     if not frames:
         return pd.DataFrame(columns=_history_columns())
@@ -144,8 +141,4 @@ def is_seed_parameter(key: str) -> bool:
 
 
 def non_seed_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: value
-        for key, value in parameters.items()
-        if not is_seed_parameter(key)
-    }
+    return {key: value for key, value in parameters.items() if not is_seed_parameter(key)}

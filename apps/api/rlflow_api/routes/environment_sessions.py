@@ -54,19 +54,27 @@ class EnvironmentSession:
 
 
 @router.post("", response_model=EnvironmentSessionSnapshot)
-def create_session(payload: EnvironmentSessionCreate, request: Request) -> EnvironmentSessionSnapshot:
+def create_session(
+    payload: EnvironmentSessionCreate, request: Request
+) -> EnvironmentSessionSnapshot:
     session = _build_session(payload, request)
     request.app.state.environment_sessions[session_id := uuid4().hex] = session
     return _snapshot(session_id, session)
 
 
 @router.post("/{session_id}/actions", response_model=EnvironmentSessionSnapshot)
-def step_session(session_id: str, payload: EnvironmentActionRequest, request: Request) -> EnvironmentSessionSnapshot:
+def step_session(
+    session_id: str, payload: EnvironmentActionRequest, request: Request
+) -> EnvironmentSessionSnapshot:
     session = _get_session(session_id, request)
     action_count = int(session.env.action_space.n)
     if payload.action < 0 or payload.action >= action_count:
-        raise HTTPException(status_code=422, detail=f"Action must be between 0 and {action_count - 1}")
-    session.timestep = session.env.step(session.timestep, np.asarray(payload.action, dtype=np.int32))
+        raise HTTPException(
+            status_code=422, detail=f"Action must be between 0 and {action_count - 1}"
+        )
+    session.timestep = session.env.step(
+        session.timestep, np.asarray(payload.action, dtype=np.int32)
+    )
     session.step += 1
     return _snapshot(session_id, session)
 
@@ -101,7 +109,9 @@ def ensure_environment_session_store(app: Any) -> None:
 
 def _build_session(payload: EnvironmentSessionCreate, request: Request) -> EnvironmentSession:
     if payload.component_id != "navix.env.grid":
-        raise HTTPException(status_code=422, detail="Environment playground currently supports navix.env.grid")
+        raise HTTPException(
+            status_code=422, detail="Environment playground currently supports navix.env.grid"
+        )
 
     component = request.app.state.registry.get(payload.component_id)
     config = {**component.defaults, **payload.config}
@@ -223,10 +233,14 @@ def _render_svg(symbolic: np.ndarray, cell_size: int = 44) -> str:
             parts.extend(_svg_cell(symbolic[row, col], x, y, cell_size))
     for row in range(height + 1):
         y = row * cell_size
-        parts.append(f'<line x1="0" y1="{y}" x2="{canvas_width}" y2="{y}" stroke="#9aa8b5" stroke-width="1"/>')
+        parts.append(
+            f'<line x1="0" y1="{y}" x2="{canvas_width}" y2="{y}" stroke="#9aa8b5" stroke-width="1"/>'
+        )
     for col in range(width + 1):
         x = col * cell_size
-        parts.append(f'<line x1="{x}" y1="0" x2="{x}" y2="{canvas_height}" stroke="#9aa8b5" stroke-width="1"/>')
+        parts.append(
+            f'<line x1="{x}" y1="0" x2="{x}" y2="{canvas_height}" stroke="#9aa8b5" stroke-width="1"/>'
+        )
     parts.append("</svg>")
     return "".join(parts)
 
@@ -238,7 +252,9 @@ def _svg_cell(cell: np.ndarray, x: int, y: int, size: int) -> list[str]:
     pad = size * 0.16
     center_x = x + size / 2
     center_y = y + size / 2
-    parts = [f'<rect x="{x}" y="{y}" width="{size}" height="{size}" fill="{_cell_fill(entity, colour)}"/>']
+    parts = [
+        f'<rect x="{x}" y="{y}" width="{size}" height="{size}" fill="{_cell_fill(entity, colour)}"/>'
+    ]
     if entity == 4:
         fill = "#f4c76b" if state == 0 else "#b87928"
         parts.append(
@@ -246,9 +262,13 @@ def _svg_cell(cell: np.ndarray, x: int, y: int, size: int) -> list[str]:
             f'rx="2" fill="{fill}" stroke="#704214" stroke-width="2"/>'
         )
         if state != 0:
-            parts.append(f'<circle cx="{center_x + size * 0.18}" cy="{center_y}" r="{size * 0.05}" fill="#fff7dc"/>')
+            parts.append(
+                f'<circle cx="{center_x + size * 0.18}" cy="{center_y}" r="{size * 0.05}" fill="#fff7dc"/>'
+            )
     elif entity == 5:
-        parts.append(f'<circle cx="{center_x - size * 0.08}" cy="{center_y}" r="{size * 0.13}" fill="#e2a72e"/>')
+        parts.append(
+            f'<circle cx="{center_x - size * 0.08}" cy="{center_y}" r="{size * 0.13}" fill="#e2a72e"/>'
+        )
         parts.append(
             f'<path d="M {center_x + size * 0.03} {center_y} H {x + size * 0.78} '
             f'M {x + size * 0.65} {center_y} V {y + size * 0.62}" '
@@ -258,7 +278,9 @@ def _svg_cell(cell: np.ndarray, x: int, y: int, size: int) -> list[str]:
         parts.append(f'<circle cx="{center_x}" cy="{center_y}" r="{size * 0.24}" fill="#44a366"/>')
         parts.append(f'<circle cx="{center_x}" cy="{center_y}" r="{size * 0.11}" fill="#eaf7ee"/>')
     elif entity == 10:
-        parts.append(f'<polygon points="{_player_points(center_x, center_y, size * 0.32, state)}" fill="#1f5f6f"/>')
+        parts.append(
+            f'<polygon points="{_player_points(center_x, center_y, size * 0.32, state)}" fill="#1f5f6f"/>'
+        )
     return parts
 
 
@@ -289,13 +311,29 @@ def _hsl_to_hex(hue: float, saturation: float, lightness: float) -> str:
 
 def _player_points(cx: float, cy: float, radius: float, direction: int) -> str:
     if direction == 0:
-        points = [(cx + radius, cy), (cx - radius * 0.7, cy - radius * 0.75), (cx - radius * 0.7, cy + radius * 0.75)]
+        points = [
+            (cx + radius, cy),
+            (cx - radius * 0.7, cy - radius * 0.75),
+            (cx - radius * 0.7, cy + radius * 0.75),
+        ]
     elif direction == 1:
-        points = [(cx, cy + radius), (cx - radius * 0.75, cy - radius * 0.7), (cx + radius * 0.75, cy - radius * 0.7)]
+        points = [
+            (cx, cy + radius),
+            (cx - radius * 0.75, cy - radius * 0.7),
+            (cx + radius * 0.75, cy - radius * 0.7),
+        ]
     elif direction == 2:
-        points = [(cx - radius, cy), (cx + radius * 0.7, cy - radius * 0.75), (cx + radius * 0.7, cy + radius * 0.75)]
+        points = [
+            (cx - radius, cy),
+            (cx + radius * 0.7, cy - radius * 0.75),
+            (cx + radius * 0.7, cy + radius * 0.75),
+        ]
     else:
-        points = [(cx, cy - radius), (cx - radius * 0.75, cy + radius * 0.7), (cx + radius * 0.75, cy + radius * 0.7)]
+        points = [
+            (cx, cy - radius),
+            (cx - radius * 0.75, cy + radius * 0.7),
+            (cx + radius * 0.75, cy + radius * 0.7),
+        ]
     return " ".join(f"{x:.2f},{y:.2f}" for x, y in points)
 
 
@@ -326,21 +364,36 @@ def _pdf_cell(cell: np.ndarray, x: float, y: float, size: float) -> list[str]:
     entity = int(cell[0])
     colour = int(cell[1])
     state = int(cell[2])
-    commands = [_pdf_fill(_cell_fill(entity, colour)), f"{x:.2f} {y:.2f} {size:.2f} {size:.2f} re f"]
+    commands = [
+        _pdf_fill(_cell_fill(entity, colour)),
+        f"{x:.2f} {y:.2f} {size:.2f} {size:.2f} re f",
+    ]
     cx = x + size / 2
     cy = y + size / 2
     if entity == 4:
         fill = "#f4c76b" if state == 0 else "#b87928"
         pad = size * 0.16
-        commands.extend([_pdf_fill(fill), f"{x + pad:.2f} {y + pad:.2f} {size - 2 * pad:.2f} {size - 2 * pad:.2f} re f"])
+        commands.extend(
+            [
+                _pdf_fill(fill),
+                f"{x + pad:.2f} {y + pad:.2f} {size - 2 * pad:.2f} {size - 2 * pad:.2f} re f",
+            ]
+        )
     elif entity == 5:
         commands.extend([_pdf_fill("#e2a72e"), _pdf_diamond(cx - size * 0.08, cy, size * 0.14)])
-        commands.extend([_pdf_stroke("#8f5f0d", 2.1), f"{cx + size * 0.04:.2f} {cy:.2f} m {x + size * 0.78:.2f} {cy:.2f} l S"])
+        commands.extend(
+            [
+                _pdf_stroke("#8f5f0d", 2.1),
+                f"{cx + size * 0.04:.2f} {cy:.2f} m {x + size * 0.78:.2f} {cy:.2f} l S",
+            ]
+        )
     elif entity == 8:
         commands.extend([_pdf_fill("#44a366"), _pdf_diamond(cx, cy, size * 0.25)])
         commands.extend([_pdf_fill("#eaf7ee"), _pdf_diamond(cx, cy, size * 0.11)])
     elif entity == 10:
-        commands.extend([_pdf_fill("#1f5f6f"), _pdf_polygon(_player_pdf_points(cx, cy, size * 0.32, state))])
+        commands.extend(
+            [_pdf_fill("#1f5f6f"), _pdf_polygon(_player_pdf_points(cx, cy, size * 0.32, state))]
+        )
     return commands
 
 
@@ -360,7 +413,9 @@ def _hex_rgb(hex_color: str) -> tuple[float, float, float]:
 
 
 def _pdf_diamond(cx: float, cy: float, radius: float) -> str:
-    return _pdf_polygon([(cx, cy + radius), (cx + radius, cy), (cx, cy - radius), (cx - radius, cy)])
+    return _pdf_polygon(
+        [(cx, cy + radius), (cx + radius, cy), (cx, cy - radius), (cx - radius, cy)]
+    )
 
 
 def _pdf_polygon(points: list[tuple[float, float]]) -> str:
@@ -371,14 +426,32 @@ def _pdf_polygon(points: list[tuple[float, float]]) -> str:
     return "\n".join(commands)
 
 
-def _player_pdf_points(cx: float, cy: float, radius: float, direction: int) -> list[tuple[float, float]]:
+def _player_pdf_points(
+    cx: float, cy: float, radius: float, direction: int
+) -> list[tuple[float, float]]:
     if direction == 0:
-        return [(cx + radius, cy), (cx - radius * 0.7, cy - radius * 0.75), (cx - radius * 0.7, cy + radius * 0.75)]
+        return [
+            (cx + radius, cy),
+            (cx - radius * 0.7, cy - radius * 0.75),
+            (cx - radius * 0.7, cy + radius * 0.75),
+        ]
     if direction == 1:
-        return [(cx, cy - radius), (cx - radius * 0.75, cy + radius * 0.7), (cx + radius * 0.75, cy + radius * 0.7)]
+        return [
+            (cx, cy - radius),
+            (cx - radius * 0.75, cy + radius * 0.7),
+            (cx + radius * 0.75, cy + radius * 0.7),
+        ]
     if direction == 2:
-        return [(cx - radius, cy), (cx + radius * 0.7, cy - radius * 0.75), (cx + radius * 0.7, cy + radius * 0.75)]
-    return [(cx, cy + radius), (cx - radius * 0.75, cy - radius * 0.7), (cx + radius * 0.75, cy - radius * 0.7)]
+        return [
+            (cx - radius, cy),
+            (cx + radius * 0.7, cy - radius * 0.75),
+            (cx + radius * 0.7, cy + radius * 0.75),
+        ]
+    return [
+        (cx, cy + radius),
+        (cx - radius * 0.75, cy - radius * 0.7),
+        (cx + radius * 0.75, cy - radius * 0.7),
+    ]
 
 
 def _pdf_document(content: str, width: float, height: float) -> bytes:
@@ -386,8 +459,14 @@ def _pdf_document(content: str, width: float, height: float) -> bytes:
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width:.2f} {height:.2f}] /Contents 4 0 R >>".encode("ascii"),
-        b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream",
+        f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width:.2f} {height:.2f}] /Contents 4 0 R >>".encode(
+            "ascii"
+        ),
+        b"<< /Length "
+        + str(len(stream)).encode("ascii")
+        + b" >>\nstream\n"
+        + stream
+        + b"\nendstream",
     ]
     pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
     offsets = [0]
@@ -402,6 +481,8 @@ def _pdf_document(content: str, width: float, height: float) -> bytes:
     for offset in offsets[1:]:
         pdf.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
     pdf.extend(
-        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n".encode("ascii")
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n".encode(
+            "ascii"
+        )
     )
     return bytes(pdf)

@@ -1,9 +1,11 @@
 """Navix environment wrappers and observation encoders."""
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 import jax
 import jax.numpy as jnp
@@ -16,8 +18,8 @@ from navix.actions import _can_walk_there
 from navix.components import EMPTY_POCKET_ID
 from navix.entities import Door, Goal, Key, Player, Wall
 from navix.environments import DoorKey, FourRooms
-from navix.environments.environment import Timestep
 from navix.environments.empty import Room as EmptyRoom
+from navix.environments.environment import Timestep
 from navix.grid import horizontal_wall, room, translate, vertical_wall
 from navix.rendering.cache import RenderingCache
 from navix.rendering.registry import PALETTE
@@ -46,14 +48,56 @@ DOORKEY_SIZES = (5, 6, 8, 16)
 FOUR_ROOMS_SIZE = 19
 FIXED_DOORKEY_LAYOUTS: dict[int, dict[str, dict[str, int]]] = {
     5: {
-        "layout1": {"door_row": 1, "door_col": 2, "key_row": 2, "key_col": 1, "goal_row": 1, "goal_col": 3},
-        "layout2": {"door_row": 3, "door_col": 2, "key_row": 2, "key_col": 1, "goal_row": 3, "goal_col": 3},
-        "layout3": {"door_row": 3, "door_col": 2, "key_row": 2, "key_col": 1, "goal_row": 1, "goal_col": 3},
+        "layout1": {
+            "door_row": 1,
+            "door_col": 2,
+            "key_row": 2,
+            "key_col": 1,
+            "goal_row": 1,
+            "goal_col": 3,
+        },
+        "layout2": {
+            "door_row": 3,
+            "door_col": 2,
+            "key_row": 2,
+            "key_col": 1,
+            "goal_row": 3,
+            "goal_col": 3,
+        },
+        "layout3": {
+            "door_row": 3,
+            "door_col": 2,
+            "key_row": 2,
+            "key_col": 1,
+            "goal_row": 1,
+            "goal_col": 3,
+        },
     },
     16: {
-        "layout1": {"door_row": 1, "door_col": 13, "key_row": 2, "key_col": 1, "goal_row": 1, "goal_col": 14},
-        "layout2": {"door_row": 14, "door_col": 13, "key_row": 2, "key_col": 1, "goal_row": 14, "goal_col": 14},
-        "layout3": {"door_row": 14, "door_col": 13, "key_row": 2, "key_col": 1, "goal_row": 1, "goal_col": 14},
+        "layout1": {
+            "door_row": 1,
+            "door_col": 13,
+            "key_row": 2,
+            "key_col": 1,
+            "goal_row": 1,
+            "goal_col": 14,
+        },
+        "layout2": {
+            "door_row": 14,
+            "door_col": 13,
+            "key_row": 2,
+            "key_col": 1,
+            "goal_row": 14,
+            "goal_col": 14,
+        },
+        "layout3": {
+            "door_row": 14,
+            "door_col": 13,
+            "key_row": 2,
+            "key_col": 1,
+            "goal_row": 1,
+            "goal_col": 14,
+        },
     },
 }
 
@@ -321,7 +365,9 @@ class NavixWrapper:
         timestep = self.env.reset(key)
         return timestep, timestep.observation
 
-    def step(self, timestep: Timestep, action: Array) -> tuple[Timestep, Array, Array, Array, Array, dict[str, Any]]:
+    def step(
+        self, timestep: Timestep, action: Array
+    ) -> tuple[Timestep, Array, Array, Array, Array, dict[str, Any]]:
         timestep = self.env.step(timestep, jnp.asarray(action).reshape(()))
         return (
             timestep,
@@ -477,15 +523,23 @@ def tabular_observation(state: State, *, spec: NavixSpec) -> Array:
 
 
 def one_hot_observation(state: State, *, spec: NavixSpec) -> Array:
-    return jax.nn.one_hot(tabular_observation(state, spec=spec), _state_space_size(spec), dtype=jnp.float32)
+    return jax.nn.one_hot(
+        tabular_observation(state, spec=spec), _state_space_size(spec), dtype=jnp.float32
+    )
 
 
 def state_features_observation(state: State, *, spec: NavixSpec) -> Array:
     if spec.env_name in {"empty_room", "four_rooms"}:
         player = state.get_player(idx=0)
-        features = [jax.nn.one_hot(_position_index(player.position, spec), spec.inner_states, dtype=jnp.float32)]
+        features = [
+            jax.nn.one_hot(
+                _position_index(player.position, spec), spec.inner_states, dtype=jnp.float32
+            )
+        ]
         if spec.uses_direction:
-            features.append(jax.nn.one_hot(player.direction.astype(jnp.int32), 4, dtype=jnp.float32))
+            features.append(
+                jax.nn.one_hot(player.direction.astype(jnp.int32), 4, dtype=jnp.float32)
+            )
         return jnp.concatenate(features)
 
     player = state.get_player(idx=0)
@@ -493,13 +547,17 @@ def state_features_observation(state: State, *, spec: NavixSpec) -> Array:
     door = state.get_doors()
     door_pos = door.position[0]
     features = [
-        jax.nn.one_hot(_position_index(player.position, spec), spec.inner_states, dtype=jnp.float32),
+        jax.nn.one_hot(
+            _position_index(player.position, spec), spec.inner_states, dtype=jnp.float32
+        ),
         jax.nn.one_hot(_key_index(key_pos, spec), spec.inner_states + 1, dtype=jnp.float32),
         jax.nn.one_hot(door.open[0].astype(jnp.int32), 2, dtype=jnp.float32),
         jax.nn.one_hot(player.direction.astype(jnp.int32), 4, dtype=jnp.float32),
     ]
     if not spec.fixed_layout:
-        features.append(jax.nn.one_hot(_position_index(door_pos, spec), spec.inner_states, dtype=jnp.float32))
+        features.append(
+            jax.nn.one_hot(_position_index(door_pos, spec), spec.inner_states, dtype=jnp.float32)
+        )
     return jnp.concatenate(features)
 
 

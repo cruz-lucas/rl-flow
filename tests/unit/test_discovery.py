@@ -17,7 +17,9 @@ class FakeEntryPoints:
 
 
 def test_entry_point_discovery_can_be_mocked(monkeypatch) -> None:
-    monkeypatch.setattr("rlflow.registry.discovery.metadata.entry_points", lambda: FakeEntryPoints())
+    monkeypatch.setattr(
+        "rlflow.registry.discovery.metadata.entry_points", lambda: FakeEntryPoints()
+    )
     registry = ComponentRegistry()
 
     discover_entry_points(registry)

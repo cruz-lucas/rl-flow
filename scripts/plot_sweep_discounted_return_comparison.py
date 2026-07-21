@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import pandas as pd
 
@@ -103,7 +103,9 @@ def _parse_args() -> argparse.Namespace:
         default=[],
         help="Curve label. Repeat once per sweep. Ignored for sweeps passed as Label=path.",
     )
-    parser.add_argument("--out", type=Path, default=Path("runs/analysis/sweep_discounted_return_compare"))
+    parser.add_argument(
+        "--out", type=Path, default=Path("runs/analysis/sweep_discounted_return_compare")
+    )
     parser.add_argument("--history", choices=("train", "eval"), default="train")
     parser.add_argument("--x", default="env_step")
     parser.add_argument("--y", "--value", dest="y", default="discounted_return")

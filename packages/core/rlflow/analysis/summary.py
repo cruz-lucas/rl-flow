@@ -10,9 +10,7 @@ import pandas as pd
 
 from rlflow.analysis.loading import load_sweep_manifest, non_seed_parameters
 
-_TRAIN_HISTORY_METRIC_RE = re.compile(
-    r"^mean_train_(return|discounted_return)_last_(\d+)$"
-)
+_TRAIN_HISTORY_METRIC_RE = re.compile(r"^mean_train_(return|discounted_return)_last_(\d+)$")
 
 
 def load_trial_metrics(manifest_path: str | Path) -> pd.DataFrame:

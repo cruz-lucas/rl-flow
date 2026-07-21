@@ -1,8 +1,8 @@
-from pathlib import Path
 import time
+from pathlib import Path
 
-from fastapi.testclient import TestClient
 import yaml
+from fastapi.testclient import TestClient
 
 from rlflow_api.main import create_app
 
@@ -29,7 +29,9 @@ def test_api_saves_and_loads_workflow_gallery(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("RLFLOW_DB_PATH", str(tmp_path / "rlflow.db"))
     monkeypatch.setenv("RLFLOW_RUN_ROOT", str(tmp_path / "runs"))
     client = TestClient(create_app())
-    workflow = yaml.safe_load(Path("configs/workflows/tabular_q_learning_riverswim.yaml").read_text(encoding="utf-8"))
+    workflow = yaml.safe_load(
+        Path("configs/workflows/tabular_q_learning_riverswim.yaml").read_text(encoding="utf-8")
+    )
 
     saved = client.post("/workflows", json={"workflow": workflow}).json()
     assert saved["workflow_id"] == "tabular_q_learning_riverswim"
@@ -47,14 +49,19 @@ def test_api_compiles_sweep_from_saved_workflow(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("RLFLOW_DB_PATH", str(tmp_path / "rlflow.db"))
     monkeypatch.setenv("RLFLOW_RUN_ROOT", str(tmp_path / "runs"))
     client = TestClient(create_app())
-    workflow = yaml.safe_load(Path("configs/workflows/tabular_q_learning_riverswim.yaml").read_text(encoding="utf-8"))
+    workflow = yaml.safe_load(
+        Path("configs/workflows/tabular_q_learning_riverswim.yaml").read_text(encoding="utf-8")
+    )
     saved = client.post("/workflows", json={"workflow": workflow}).json()
 
     candidates = client.get(f"/sweeps/workflows/{saved['workflow_id']}/candidates")
 
     assert candidates.status_code == 200
     candidate_data = candidates.json()
-    assert any(item["target"] == "nodes.agent.config.learning_rate" for item in candidate_data["candidates"])
+    assert any(
+        item["target"] == "nodes.agent.config.learning_rate"
+        for item in candidate_data["candidates"]
+    )
     seed_target = candidate_data["seed_candidates"][0]["target"]
 
     compiled = client.post(
@@ -115,7 +122,9 @@ def test_api_compiles_sweep_from_saved_workflow(monkeypatch, tmp_path) -> None:
     assert summary["best"]["metric_count"] == 1
 
 
-def test_api_results_discovers_filesystem_sweep_trials_with_duplicate_sweep_ids(monkeypatch, tmp_path) -> None:
+def test_api_results_discovers_filesystem_sweep_trials_with_duplicate_sweep_ids(
+    monkeypatch, tmp_path
+) -> None:
     run_root = tmp_path / "runs"
     monkeypatch.setenv("RLFLOW_DB_PATH", str(tmp_path / "rlflow.db"))
     monkeypatch.setenv("RLFLOW_RUN_ROOT", str(run_root))
@@ -128,14 +137,18 @@ def test_api_results_discovers_filesystem_sweep_trials_with_duplicate_sweep_ids(
         run_dir = sweep_dir / "trials" / "group-0000" / "seed-0"
         run_dir.mkdir(parents=True)
         (run_dir / "logs").mkdir()
-        metrics_path = run_dir / "summaries" / "metrics.json" if canonical_metrics else run_dir / "metrics.json"
+        metrics_path = (
+            run_dir / "summaries" / "metrics.json"
+            if canonical_metrics
+            else run_dir / "metrics.json"
+        )
         metrics_path.parent.mkdir(parents=True, exist_ok=True)
         metrics_path.write_text(
-            '{"mean_train_return": %.1f}' % episode_return,
+            f'{{"mean_train_return": {episode_return:.1f}}}',
             encoding="utf-8",
         )
         (run_dir / "logs" / "train_history.jsonl").write_text(
-            '{"episode": 0, "return": %.1f}' % episode_return,
+            f'{{"episode": 0, "return": {episode_return:.1f}}}',
             encoding="utf-8",
         )
         workflow = {
@@ -186,7 +199,10 @@ def test_api_results_discovers_filesystem_sweep_trials_with_duplicate_sweep_ids(
     rows = results.json()
     discovered = [row for row in rows if row["sweep_id"] == "shared-sweep"]
     assert len(discovered) == 2
-    assert {Path(row["sweep_dir"]).name for row in discovered} == {"dqn-smoke", "dqn-countbased-smoke"}
+    assert {Path(row["sweep_dir"]).name for row in discovered} == {
+        "dqn-smoke",
+        "dqn-countbased-smoke",
+    }
     assert {row["metrics"]["mean_train_return"] for row in discovered} == {1.0, 2.0}
 
 
@@ -194,7 +210,9 @@ def test_api_run_creates_unique_runs_and_refreshes_job_status(monkeypatch, tmp_p
     monkeypatch.setenv("RLFLOW_DB_PATH", str(tmp_path / "rlflow.db"))
     monkeypatch.setenv("RLFLOW_RUN_ROOT", str(tmp_path / "runs"))
     client = TestClient(create_app())
-    workflow = yaml.safe_load(Path("configs/workflows/tabular_q_learning_riverswim.yaml").read_text(encoding="utf-8"))
+    workflow = yaml.safe_load(
+        Path("configs/workflows/tabular_q_learning_riverswim.yaml").read_text(encoding="utf-8")
+    )
     for node in workflow["nodes"]:
         if node["id"] == "runner":
             node["config"]["train_episodes"] = 2
@@ -202,8 +220,12 @@ def test_api_run_creates_unique_runs_and_refreshes_job_status(monkeypatch, tmp_p
             node["config"]["eval_episodes"] = 0
             node["config"]["save_final_checkpoint"] = False
 
-    first_job = client.post("/experiments/run", json={"workflow": workflow, "backend": "local"}).json()
-    second_job = client.post("/experiments/run", json={"workflow": workflow, "backend": "local"}).json()
+    first_job = client.post(
+        "/experiments/run", json={"workflow": workflow, "backend": "local"}
+    ).json()
+    second_job = client.post(
+        "/experiments/run", json={"workflow": workflow, "backend": "local"}
+    ).json()
 
     assert first_job["experiment_id"] != second_job["experiment_id"]
     assert first_job["run_dir"] != second_job["run_dir"]
@@ -229,7 +251,9 @@ def test_api_run_creates_unique_runs_and_refreshes_job_status(monkeypatch, tmp_p
     results = client.get("/experiments/results")
     assert results.status_code == 200
     result_rows = results.json()
-    first_result = next(row for row in result_rows if row["experiment_id"] == first_job["experiment_id"])
+    first_result = next(
+        row for row in result_rows if row["experiment_id"] == first_job["experiment_id"]
+    )
     assert first_result["metrics"]["mean_train_return"] is not None
     assert first_result["train_history"][0]["episode"] == 0
 
@@ -261,7 +285,9 @@ def test_api_environment_session_steps_and_exports_pdf(monkeypatch, tmp_path) ->
     assert session["observation_preview"] == 0
     assert session["svg"].startswith("<svg")
 
-    stepped = client.post(f"/environment-sessions/{session['session_id']}/actions", json={"action": 3})
+    stepped = client.post(
+        f"/environment-sessions/{session['session_id']}/actions", json={"action": 3}
+    )
     assert stepped.status_code == 200
     assert stepped.json()["step"] == 1
 
@@ -330,7 +356,9 @@ def test_api_dataset_resolution_and_visitation_for_navix_symbolic(monkeypatch, t
     )
     client = TestClient(create_app())
 
-    response = client.post("/datasets/inspect", json={"path": "runs/sample/replay", "preview_rows": 1})
+    response = client.post(
+        "/datasets/inspect", json={"path": "runs/sample/replay", "preview_rows": 1}
+    )
 
     assert response.status_code == 200
     inspection = response.json()

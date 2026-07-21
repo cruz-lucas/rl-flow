@@ -42,11 +42,20 @@ def test_export_best_config_copies_workflow_and_resolved(tmp_path: Path) -> None
         }
     )
     (tmp_path / "sweep_manifest.yaml").write_text(manifest.model_dump_json(), encoding="utf-8")
-    Path(trial_dir / "metrics.json").write_text(json.dumps({"mean_eval_return": 5.0}), encoding="utf-8")
+    Path(trial_dir / "metrics.json").write_text(
+        json.dumps({"mean_eval_return": 5.0}), encoding="utf-8"
+    )
 
-    output = export_best_config(tmp_path / "sweep_manifest.yaml", metric="mean_eval_return", goal="maximize")
+    output = export_best_config(
+        tmp_path / "sweep_manifest.yaml", metric="mean_eval_return", goal="maximize"
+    )
     assert Path(output["best_group"]).exists()
     assert Path(output["best_workflow"]).exists()
     assert Path(output["best_resolved_config"]).exists()
-    assert yaml.safe_load(Path(output["best_workflow"]).read_text(encoding="utf-8"))["name"] == "test"
-    assert yaml.safe_load(Path(output["best_resolved_config"]).read_text(encoding="utf-8"))["config"] == 1
+    assert (
+        yaml.safe_load(Path(output["best_workflow"]).read_text(encoding="utf-8"))["name"] == "test"
+    )
+    assert (
+        yaml.safe_load(Path(output["best_resolved_config"]).read_text(encoding="utf-8"))["config"]
+        == 1
+    )

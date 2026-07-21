@@ -6,7 +6,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rlflow.schemas.workflow import ExecutionSpec, WorkflowSpec
 
-
 SweepMethod = Literal["grid", "random"]
 SweepGoal = Literal["maximize", "minimize"]
 SweepDistribution = Literal["choice", "uniform", "loguniform", "int_uniform"]
@@ -30,7 +29,7 @@ class SweepParameter(BaseModel):
     maximum: float | int | None = None
 
     @model_validator(mode="after")
-    def validate_search_space(self) -> "SweepParameter":
+    def validate_search_space(self) -> SweepParameter:
         if self.values is not None:
             if not self.values:
                 raise ValueError("values must not be empty")
@@ -71,7 +70,7 @@ class SweepSpec(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def validate_trial_count(self) -> "SweepSpec":
+    def validate_trial_count(self) -> SweepSpec:
         if not self.parameters:
             raise ValueError("sweep parameters must not be empty")
         if self.method == "random" and self.num_trials is None:

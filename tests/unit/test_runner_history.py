@@ -26,14 +26,8 @@ def test_history_writers_include_cumulative_env_step(tmp_path: Path) -> None:
         lengths=np.array([2, 5]),
     )
 
-    train_rows = [
-        json.loads(line)
-        for line in train_path.read_text(encoding="utf-8").splitlines()
-    ]
-    eval_rows = [
-        json.loads(line)
-        for line in eval_path.read_text(encoding="utf-8").splitlines()
-    ]
+    train_rows = [json.loads(line) for line in train_path.read_text(encoding="utf-8").splitlines()]
+    eval_rows = [json.loads(line) for line in eval_path.read_text(encoding="utf-8").splitlines()]
 
     assert [row["env_step"] for row in train_rows] == [3, 7]
     assert [row["env_step"] for row in eval_rows] == [2, 7]

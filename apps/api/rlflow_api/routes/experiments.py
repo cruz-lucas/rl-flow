@@ -80,7 +80,9 @@ def run_experiment(payload: RunExperimentRequest, request: Request) -> JobInfo:
                 run_id,
             )
         try:
-            experiment = WorkflowCompiler(request.app.state.registry).compile(workflow, out_dir=out_dir)
+            experiment = WorkflowCompiler(request.app.state.registry).compile(
+                workflow, out_dir=out_dir
+            )
         except WorkflowCompilationError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         request.app.state.storage.save_experiment(experiment, status="compiled")
@@ -173,20 +175,20 @@ def _result_from_workflow(
         "status": status,
         "run_dir": str(run_dir),
         "workflow_name": (
-            workflow.get("name", experiment_id)
-            if isinstance(workflow, dict)
-            else experiment_id
+            workflow.get("name", experiment_id) if isinstance(workflow, dict) else experiment_id
         ),
         "sweep_dir": sweep_dir,
         "sweep_id": metadata.get("sweep_id") if isinstance(metadata, dict) else None,
         "sweep_trial_id": metadata.get("sweep_trial_id") if isinstance(metadata, dict) else None,
         "sweep_group_id": metadata.get("sweep_group_id") if isinstance(metadata, dict) else None,
-        "sweep_group_run_dir": metadata.get("sweep_group_run_dir") if isinstance(metadata, dict) else None,
-        "sweep_parameters": metadata.get("sweep_parameters", {}) if isinstance(metadata, dict) else {},
+        "sweep_group_run_dir": metadata.get("sweep_group_run_dir")
+        if isinstance(metadata, dict)
+        else None,
+        "sweep_parameters": metadata.get("sweep_parameters", {})
+        if isinstance(metadata, dict)
+        else {},
         "sweep_group_parameters": (
-            metadata.get("sweep_group_parameters", {})
-            if isinstance(metadata, dict)
-            else {}
+            metadata.get("sweep_group_parameters", {}) if isinstance(metadata, dict) else {}
         ),
         "seed": metadata.get("seed") if isinstance(metadata, dict) else None,
         "metrics": _read_metrics(run_dir),
@@ -199,15 +201,11 @@ def _filesystem_status(run_dir: Path) -> str:
     status = load_status(run_dir)
     if status is not None:
         return status.status.value
-    if (
-        (run_dir / "summaries" / "metrics.json").exists()
-        or (run_dir / "metrics.json").exists()
-    ):
+    if (run_dir / "summaries" / "metrics.json").exists() or (run_dir / "metrics.json").exists():
         return RunStatusState.completed.value
-    if (
-        (run_dir / "logs" / "train_history.jsonl").exists()
-        or (run_dir / "logs" / "eval_history.jsonl").exists()
-    ):
+    if (run_dir / "logs" / "train_history.jsonl").exists() or (
+        run_dir / "logs" / "eval_history.jsonl"
+    ).exists():
         return RunStatusState.completed.value
     return RunStatusState.compiled.value
 
@@ -264,11 +262,7 @@ def _read_yaml_dict(path: Path) -> dict[str, Any]:
 
 
 def _non_seed_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: value
-        for key, value in parameters.items()
-        if not _is_seed_parameter(key)
-    }
+    return {key: value for key, value in parameters.items() if not _is_seed_parameter(key)}
 
 
 def _is_seed_parameter(key: str) -> bool:

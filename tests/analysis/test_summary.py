@@ -58,18 +58,28 @@ def test_summary_ranks_groups_by_metric(tmp_path: Path) -> None:
             ],
         }
     )
-    for trial, metric in [(compilation.trials[0], 1.0), (compilation.trials[1], 3.0), (compilation.trials[2], 4.0)]:
+    for trial, metric in [
+        (compilation.trials[0], 1.0),
+        (compilation.trials[1], 3.0),
+        (compilation.trials[2], 4.0),
+    ]:
         Path(trial.metrics_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(trial.metrics_path).write_text(json.dumps({"mean_eval_return": metric}), encoding="utf-8")
+        Path(trial.metrics_path).write_text(
+            json.dumps({"mean_eval_return": metric}), encoding="utf-8"
+        )
     (sweep_dir / "sweep_manifest.yaml").write_text(compilation.model_dump_json(), encoding="utf-8")
 
-    summary = summarize_groups(sweep_dir / "sweep_manifest.yaml", metric="mean_eval_return", goal="maximize")
+    summary = summarize_groups(
+        sweep_dir / "sweep_manifest.yaml", metric="mean_eval_return", goal="maximize"
+    )
     assert list(summary["rank"]) == [1, 2]
     assert summary.iloc[0]["parameters"] == {"lr": 0.2}
     assert summary.iloc[0]["metric_mean"] == 4.0
     assert summary.iloc[1]["metric_mean"] == 2.0
 
-    minimized = summarize_groups(sweep_dir / "sweep_manifest.yaml", metric="mean_eval_return", goal="minimize")
+    minimized = summarize_groups(
+        sweep_dir / "sweep_manifest.yaml", metric="mean_eval_return", goal="minimize"
+    )
     assert minimized.iloc[0]["parameters"] == {"lr": 0.1}
 
 
@@ -100,11 +110,15 @@ def test_summary_handles_missing_metrics_and_invalid_goal(tmp_path: Path) -> Non
     )
     (tmp_path / "sweep_manifest.yaml").write_text(compilation.model_dump_json(), encoding="utf-8")
 
-    summary = summarize_groups(tmp_path / "sweep_manifest.yaml", metric="mean_eval_return", goal="maximize")
+    summary = summarize_groups(
+        tmp_path / "sweep_manifest.yaml", metric="mean_eval_return", goal="maximize"
+    )
     assert summary.empty
 
     with pytest.raises(ValueError, match="goal must be"):
-        summarize_groups(tmp_path / "sweep_manifest.yaml", metric="mean_eval_return", goal="largest")
+        summarize_groups(
+            tmp_path / "sweep_manifest.yaml", metric="mean_eval_return", goal="largest"
+        )
 
 
 def test_summary_computes_train_discounted_return_last_n_from_history(tmp_path: Path) -> None:
@@ -176,8 +190,22 @@ def test_summary_computes_train_discounted_return_last_n_from_history(tmp_path: 
 def test_filter_top_k_curves_keeps_expected_groups() -> None:
     curves = pd.DataFrame(
         [
-            {"group_key": "group-0000", "x": 0.0, "mean": 1.0, "ci_low": 1.0, "ci_high": 1.0, "parameters": {"lr": 0.1}},
-            {"group_key": "group-0001", "x": 0.0, "mean": 2.0, "ci_low": 2.0, "ci_high": 2.0, "parameters": {"lr": 0.2}},
+            {
+                "group_key": "group-0000",
+                "x": 0.0,
+                "mean": 1.0,
+                "ci_low": 1.0,
+                "ci_high": 1.0,
+                "parameters": {"lr": 0.1},
+            },
+            {
+                "group_key": "group-0001",
+                "x": 0.0,
+                "mean": 2.0,
+                "ci_low": 2.0,
+                "ci_high": 2.0,
+                "parameters": {"lr": 0.2},
+            },
         ]
     )
     summary = pd.DataFrame(
@@ -208,9 +236,9 @@ def test_export_summary_tables_writes_all_formats(tmp_path: Path) -> None:
         ]
     )
     paths = export_summary_tables(summary, out_dir=tmp_path)
-    assert (Path(paths["csv"]).exists())
-    assert (Path(paths["json"]).exists())
-    assert (Path(paths["markdown"]).exists())
+    assert Path(paths["csv"]).exists()
+    assert Path(paths["json"]).exists()
+    assert Path(paths["markdown"]).exists()
 
 
 def test_export_summary_tables_rejects_empty_summary(tmp_path: Path) -> None:

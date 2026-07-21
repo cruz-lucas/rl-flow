@@ -5,15 +5,15 @@ import itertools
 import json
 import math
 import re
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
 import yaml
 
 from rlflow.analysis.loading import load_histories, load_sweep_manifest, non_seed_parameters
-
 
 # Optional editable design table. Prefer passing --design path.csv once the table
 # is finalized, but this is useful while iterating.
@@ -93,20 +93,26 @@ def main() -> None:
     if responses.empty:
         raise SystemExit("No trial responses found. Check sweep paths and history files.")
 
-    design, design_source = load_design_table(args.design)
-    data = merge_design(responses, design, join_column=args.join_column)
+    requested_factors = parse_factor_columns(args.factor)
+    factors_already_present = bool(requested_factors) and all(
+        factor in responses.columns for factor in requested_factors
+    )
+    if args.design is None and factors_already_present:
+        design, design_source = None, None
+        data = responses
+    else:
+        design, design_source = load_design_table(args.design)
+        data = merge_design(responses, design, join_column=args.join_column)
     factor_columns = resolve_factor_columns(
         data,
-        requested=parse_factor_columns(args.factor),
+        requested=requested_factors,
         design_columns=list(design.columns) if design is not None else None,
     )
 
     warnings: list[str] = []
     welch_anova: dict[str, Any] | None = None
     if not factor_columns:
-        warnings.append(
-            "No two-level factor columns were found. Wrote response summaries only."
-        )
+        warnings.append("No two-level factor columns were found. Wrote response summaries only.")
         coded = data.copy()
         coding: dict[str, Any] = {}
         effects = pd.DataFrame()
@@ -266,10 +272,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--welch-anova",
         action="store_true",
-        help=(
-            "Run an additional one-way Welch ANOVA across the observed factorial "
-            "design cells."
-        ),
+        help=("Run an additional one-way Welch ANOVA across the observed factorial design cells."),
     )
     args = parser.parse_args()
 
@@ -300,12 +303,14 @@ def load_trial_responses(
             and pd.to_numeric(histories[source_response], errors="coerce").dropna().empty
         )
         if response_missing or response_empty:
-            if response == "discounted_return" and fallback_to_return and "return" in histories.columns:
+            if (
+                response == "discounted_return"
+                and fallback_to_return
+                and "return" in histories.columns
+            ):
                 source_response = "return"
             else:
-                raise SystemExit(
-                    f"{response!r} not found in {history} histories for {sweep_path}"
-                )
+                raise SystemExit(f"{response!r} not found in {history} histories for {sweep_path}")
 
         trial_by_id = {trial.trial_id: trial for trial in compilation.trials}
         experiment_label, experiment_number = extract_experiment(compilation.sweep_id)
@@ -358,7 +363,9 @@ def response_values(
     last_n: int | None,
 ) -> pd.Series:
     sort_columns = [column for column in ("episode", "env_step") if column in trial_history.columns]
-    ordered = trial_history.sort_values(sort_columns, kind="stable") if sort_columns else trial_history
+    ordered = (
+        trial_history.sort_values(sort_columns, kind="stable") if sort_columns else trial_history
+    )
     values = pd.to_numeric(ordered[response], errors="coerce").dropna()
     if last_n is not None:
         values = values.tail(last_n)
@@ -722,7 +729,9 @@ def fit_factorial_model(
             "Some high-order effects may be aliased."
         )
     if df_resid <= 0:
-        warnings.append("No residual degrees of freedom; F statistics and p-values are unavailable.")
+        warnings.append(
+            "No residual degrees of freedom; F statistics and p-values are unavailable."
+        )
     if balanced is None:
         warnings.append(
             "The design is not a complete balanced 2^k design. Partial sums of squares "
@@ -843,16 +852,10 @@ def fit_welch_anova(
     weighted_mean = float(np.dot(weights, group_means) / weight_sum)
     group_count = len(groups)
 
-    numerator = float(np.dot(weights, (group_means - weighted_mean) ** 2)) / (
-        group_count - 1
-    )
+    numerator = float(np.dot(weights, (group_means - weighted_mean) ** 2)) / (group_count - 1)
     relative_weights = weights / weight_sum
-    variance_term = float(
-        np.sum(((1.0 - relative_weights) ** 2) / (nobs - 1.0))
-    )
-    correction = 1.0 + (
-        2.0 * (group_count - 2) * variance_term / (group_count**2 - 1.0)
-    )
+    variance_term = float(np.sum(((1.0 - relative_weights) ** 2) / (nobs - 1.0)))
+    correction = 1.0 + (2.0 * (group_count - 2) * variance_term / (group_count**2 - 1.0))
     f_statistic = numerator / correction
     df_numerator = float(group_count - 1)
     df_denominator = float((group_count**2 - 1.0) / (3.0 * variance_term))
@@ -880,8 +883,7 @@ def fit_welch_anova(
 def format_design_cell(cell_key: Any, factor_columns: Sequence[str]) -> str:
     values = cell_key if isinstance(cell_key, tuple) else (cell_key,)
     assignments = ", ".join(
-        f"{factor}={int(value)}"
-        for factor, value in zip(factor_columns, values, strict=True)
+        f"{factor}={int(value)}" for factor, value in zip(factor_columns, values, strict=True)
     )
     return f"({assignments})"
 
@@ -1007,9 +1009,7 @@ def render_table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
         "  ".join("-" * width for width in widths),
     ]
     for row in rows:
-        rendered.append(
-            "  ".join(str(cell).ljust(widths[index]) for index, cell in enumerate(row))
-        )
+        rendered.append("  ".join(str(cell).ljust(widths[index]) for index, cell in enumerate(row)))
     return "\n".join(rendered)
 
 
@@ -1042,7 +1042,9 @@ def write_plots(
         plt.close(fig)
         paths.append(path)
 
-    main_effects = [factor for factor in factor_columns if coded_factor_column(factor) in data.columns]
+    main_effects = [
+        factor for factor in factor_columns if coded_factor_column(factor) in data.columns
+    ]
     if main_effects:
         columns = min(3, len(main_effects))
         rows = math.ceil(len(main_effects) / columns)
@@ -1050,9 +1052,7 @@ def write_plots(
         axes_array = np.asarray(axes).reshape(-1)
         for ax, factor in zip(axes_array, main_effects, strict=False):
             grouped = (
-                data.groupby(coded_factor_column(factor))[RESPONSE_COLUMN]
-                .mean()
-                .reindex([-1, 1])
+                data.groupby(coded_factor_column(factor))[RESPONSE_COLUMN].mean().reindex([-1, 1])
             )
             ax.plot(["low", "high"], grouped.to_numpy(dtype=float), marker="o", color="#f58518")
             ax.set_title(factor)

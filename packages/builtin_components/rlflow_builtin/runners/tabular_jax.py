@@ -9,9 +9,9 @@ import jax
 import numpy as np
 import yaml
 
-from rlflow.tracking.logger import JsonlLogger
 from rlflow.registry.builtin import create_default_registry
 from rlflow.schemas.workflow import WorkflowSpec
+from rlflow.tracking.logger import JsonlLogger
 from rlflow_builtin.dqn.training import (
     DQN_AGENT_COMPONENT,
     DQN_RMAX_AGENT_COMPONENT,
@@ -54,9 +54,7 @@ def main() -> int:
     env_node = workflow_node(workflow, node_ids["environment"])
     runner_node = workflow_node(workflow, node_ids["runner"])
     buffer_node = (
-        workflow_node(workflow, node_ids["replay_buffer"])
-        if "replay_buffer" in node_ids
-        else None
+        workflow_node(workflow, node_ids["replay_buffer"]) if "replay_buffer" in node_ids else None
     )
     runner_intrinsic_node = (
         workflow_node(workflow, node_ids["intrinsic_reward"])
@@ -206,13 +204,17 @@ def _write_tabular_outputs(
         result.train_returns,
         result.train_lengths,
         result.train_losses,
-        discounted_returns=_optional_discounted(result.train_discounted_returns, result.train_returns),
+        discounted_returns=_optional_discounted(
+            result.train_discounted_returns, result.train_returns
+        ),
     )
     _write_eval_history(
         logs_dir / "eval_history.jsonl",
         result.eval_returns,
         result.eval_lengths,
-        discounted_returns=_optional_discounted(result.eval_discounted_returns, result.eval_returns),
+        discounted_returns=_optional_discounted(
+            result.eval_discounted_returns, result.eval_returns
+        ),
     )
 
     dataset_path = None
@@ -230,12 +232,7 @@ def _write_tabular_outputs(
 
     final_checkpoint = None
     if runner.save_final_checkpoint:
-        checkpoint_path = (
-            run_dir
-            / runner.checkpoint_dir
-            / agent.algorithm
-            / "final_checkpoint.npz"
-        )
+        checkpoint_path = run_dir / runner.checkpoint_dir / agent.algorithm / "final_checkpoint.npz"
         save_checkpoint(
             result,
             checkpoint_path,
@@ -428,7 +425,9 @@ def _write_episode_history(
 ) -> None:
     with path.open("w", encoding="utf-8") as handle:
         env_step = 0
-        for idx, (episode_return, episode_length, loss) in enumerate(zip(returns, lengths, losses, strict=True)):
+        for idx, (episode_return, episode_length, loss) in enumerate(
+            zip(returns, lengths, losses, strict=True)
+        ):
             env_step += int(episode_length)
             row = {
                 "episode": idx,
@@ -439,10 +438,7 @@ def _write_episode_history(
             }
             if discounted_returns is not None:
                 row["discounted_return"] = float(discounted_returns[idx])
-            handle.write(
-                json.dumps(row, sort_keys=True)
-                + "\n"
-            )
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
 
 
 def _write_eval_history(
@@ -453,9 +449,7 @@ def _write_eval_history(
 ) -> None:
     with path.open("w", encoding="utf-8") as handle:
         env_step = 0
-        for idx, (episode_return, episode_length) in enumerate(
-            zip(returns, lengths, strict=True)
-        ):
+        for idx, (episode_return, episode_length) in enumerate(zip(returns, lengths, strict=True)):
             env_step += int(episode_length)
             row = {
                 "episode": idx,

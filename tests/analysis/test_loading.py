@@ -7,7 +7,7 @@ from rlflow.schemas.sweep import SweepCompilation, SweepSpec
 
 
 def test_load_sweep_histories_skips_missing_files(tmp_path: Path) -> None:
-    spec = SweepSpec.model_validate(
+    SweepSpec.model_validate(
         {
             "name": "history sweep",
             "sweep_id": "history-sweep",

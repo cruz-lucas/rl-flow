@@ -76,7 +76,9 @@ def list_components(
     else:
         components = registry.list()
     for component in components:
-        typer.echo(f"{component.source}\t{component.id}\t{component.kind}\t{component.display_name}")
+        typer.echo(
+            f"{component.source}\t{component.id}\t{component.kind}\t{component.display_name}"
+        )
 
 
 @workflow_app.command("validate")
@@ -174,7 +176,9 @@ def jobs_cancel(job_id: str) -> None:
 def sweep_compile(
     path: Path,
     out: Path | None = typer.Option(None, "--out"),
-    backend: str | None = typer.Option(None, "--backend", help="Optional backend override: local or slurm"),
+    backend: str | None = typer.Option(
+        None, "--backend", help="Optional backend override: local or slurm"
+    ),
 ) -> None:
     spec = _load_sweep(path)
     _override_sweep_backend(spec, backend)
@@ -190,7 +194,9 @@ def sweep_compile(
 def sweep_run(
     path: Path,
     out: Path | None = typer.Option(None, "--out"),
-    backend: str | None = typer.Option(None, "--backend", help="Optional backend override: local or slurm"),
+    backend: str | None = typer.Option(
+        None, "--backend", help="Optional backend override: local or slurm"
+    ),
 ) -> None:
     spec = _load_sweep(path)
     _override_sweep_backend(spec, backend)
@@ -223,7 +229,9 @@ def sweep_run(
                     check=True,
                 )
             except subprocess.CalledProcessError as exc:
-                typer.echo(f"Trial {trial.trial_id} failed with exit code {exc.returncode}", err=True)
+                typer.echo(
+                    f"Trial {trial.trial_id} failed with exit code {exc.returncode}", err=True
+                )
                 raise typer.Exit(code=exc.returncode) from exc
         typer.echo(yaml.safe_dump(compilation.model_dump(mode="json"), sort_keys=True))
         return
@@ -244,7 +252,9 @@ def sweep_summarize(
     if goal is not None and goal not in {"maximize", "minimize"}:
         typer.echo("--goal must be maximize or minimize", err=True)
         raise typer.Exit(code=1)
-    summary = SweepCompiler(_registry()).summarize(path, metric=metric, goal=goal, metric_last_n=metric_last_n)
+    summary = SweepCompiler(_registry()).summarize(
+        path, metric=metric, goal=goal, metric_last_n=metric_last_n
+    )
     typer.echo(yaml.safe_dump(summary, sort_keys=True))
 
 
@@ -268,9 +278,7 @@ def sweep_status(path: Path) -> None:
         counts[state] += 1
         if state == RunStatusState.failed.value:
             hint = _trial_failure_hint(Path(trial.run_dir))
-            failed_details.append(
-                f"{trial.trial_id}: {hint}" if hint else trial.trial_id
-            )
+            failed_details.append(f"{trial.trial_id}: {hint}" if hint else trial.trial_id)
 
     best = compilation.get("best") if isinstance(compilation, dict) else None
     best_group = best.get("group_id") if isinstance(best, dict) else None
@@ -303,7 +311,9 @@ def sweep_report(
     top_k: int = typer.Option(20, "--top-k", min=1, help="Number of ranked groups to print."),
     all_groups: bool = typer.Option(False, "--all", help="Print all ranked groups."),
     show_trials: bool = typer.Option(False, "--show-trials", help="Include per-trial metric rows."),
-    out: Path | None = typer.Option(None, "--out", help="Optional directory for report/json/csv files."),
+    out: Path | None = typer.Option(
+        None, "--out", help="Optional directory for report/json/csv files."
+    ),
 ) -> None:
     if path.is_dir():
         path = path / "sweep_manifest.yaml"
@@ -315,7 +325,9 @@ def sweep_report(
         from rlflow.analysis.report import export_sweep_report, format_sweep_report
 
         resolved_top_k = None if all_groups else top_k
-        summary = SweepCompiler(_registry()).summarize(path, metric=metric, goal=goal, metric_last_n=metric_last_n)
+        summary = SweepCompiler(_registry()).summarize(
+            path, metric=metric, goal=goal, metric_last_n=metric_last_n
+        )
         typer.echo(format_sweep_report(summary, top_k=resolved_top_k, include_trials=show_trials))
 
         if out is not None:
@@ -580,7 +592,10 @@ def _trial_failure_hint(run_dir: Path) -> str | None:
         if not path.exists():
             continue
         try:
-            lines = [line.strip() for line in path.read_text(encoding="utf-8", errors="replace").splitlines()]
+            lines = [
+                line.strip()
+                for line in path.read_text(encoding="utf-8", errors="replace").splitlines()
+            ]
         except OSError:
             continue
         lines = [line for line in lines if line]

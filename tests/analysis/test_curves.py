@@ -1,5 +1,5 @@
-import pytest
 import pandas as pd
+import pytest
 
 from rlflow.analysis.curves import (
     apply_curve_labels,

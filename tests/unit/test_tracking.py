@@ -32,7 +32,9 @@ def test_manifest_writer_and_sha256(tmp_path: Path) -> None:
     loaded = load_manifest(tmp_path)
 
     assert loaded.schema_version == "rlflow.run.v1"
-    assert loaded.workflow_sha256 == "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+    assert (
+        loaded.workflow_sha256 == "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+    )
 
 
 def test_status_update_preserves_lifecycle_timestamps(tmp_path: Path) -> None:

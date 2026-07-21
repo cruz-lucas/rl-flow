@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
 
@@ -38,7 +38,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Plot tabular R-Max Navix state-action maps from a run directory."
     )
-    parser.add_argument("run_dir", type=Path, help="Run directory containing q_table.npy and action_counts.npy")
+    parser.add_argument(
+        "run_dir", type=Path, help="Run directory containing q_table.npy and action_counts.npy"
+    )
     parser.add_argument(
         "--out-dir",
         type=Path,
@@ -57,8 +59,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=10,
         help="Episode count represented by the final q_table.npy.",
     )
-    parser.add_argument("--size", type=int, default=None, help="Navix grid size. Defaults to 16 for EmptyRoom, 19 for FourRooms.")
-    parser.add_argument("--known-threshold", type=float, default=1.0, help="Count threshold for known pairs")
+    parser.add_argument(
+        "--size",
+        type=int,
+        default=None,
+        help="Navix grid size. Defaults to 16 for EmptyRoom, 19 for FourRooms.",
+    )
+    parser.add_argument(
+        "--known-threshold", type=float, default=1.0, help="Count threshold for known pairs"
+    )
     args = parser.parse_args(argv)
 
     run_dir = args.run_dir
@@ -73,7 +82,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     validate_tables(q_table, action_counts, size=size)
 
     visitation_grid = state_action_to_grid(action_counts, size=size, env_name=env_name)
-    known_grid = state_action_to_grid((action_counts >= args.known_threshold).astype(float), size=size, env_name=env_name)
+    known_grid = state_action_to_grid(
+        (action_counts >= args.known_threshold).astype(float), size=size, env_name=env_name
+    )
     q_grid = state_action_to_grid(q_table, size=size, env_name=env_name)
 
     plot_state_action_map(
@@ -139,10 +150,14 @@ def validate_tables(q_table: np.ndarray, action_counts: np.ndarray, *, size: int
     if q_table.shape != expected_shape:
         raise ValueError(f"Expected q_table shape {expected_shape}, got {q_table.shape}")
     if action_counts.shape != expected_shape:
-        raise ValueError(f"Expected action_counts shape {expected_shape}, got {action_counts.shape}")
+        raise ValueError(
+            f"Expected action_counts shape {expected_shape}, got {action_counts.shape}"
+        )
 
 
-def state_action_to_grid(values: np.ndarray, *, size: int = 16, env_name: str = "empty_room") -> np.ndarray:
+def state_action_to_grid(
+    values: np.ndarray, *, size: int = 16, env_name: str = "empty_room"
+) -> np.ndarray:
     env_name = normalize_env_name(env_name)
     values = np.asarray(values, dtype=float)
     expected_states = (size - 2) * (size - 2)

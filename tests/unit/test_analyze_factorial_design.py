@@ -10,7 +10,6 @@ import pandas as pd
 import pytest
 from scipy.stats import f_oneway
 
-
 SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "analyze_factorial_design.py"
 SPEC = importlib.util.spec_from_file_location("analyze_factorial_design", SCRIPT_PATH)
 assert SPEC is not None
@@ -114,9 +113,7 @@ def test_welch_flag_controls_report_and_json_outputs(
     default_config = json.loads((default_out / "analysis_config.json").read_text())
     assert default_config["welch_anova"] is False
     assert not (default_out / "welch_anova.json").exists()
-    assert "Welch ANOVA (Design Cells)" not in (
-        default_out / "factorial_report.txt"
-    ).read_text()
+    assert "Welch ANOVA (Design Cells)" not in (default_out / "factorial_report.txt").read_text()
 
     welch_out = tmp_path / "welch"
     monkeypatch.setattr(

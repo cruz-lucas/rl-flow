@@ -7,6 +7,7 @@ Covers:
   * RiverSwim honours non-positive easy/hard reward configs;
   * the DQN epsilon schedule tolerates ``epsilon_decay_steps == 0``.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -84,7 +85,9 @@ def test_offline_training_reports_real_evaluation_returns(tmp_path: Path) -> Non
     state = 0
     for i in range(600):
         action = int(rng.integers(0, 4))
-        next_state, reward, done = step(jnp.asarray(state), jnp.asarray(action), jax.random.PRNGKey(i))
+        next_state, reward, done = step(
+            jnp.asarray(state), jnp.asarray(action), jax.random.PRNGKey(i)
+        )
         obs.append(state)
         act.append(action)
         rew.append(float(reward))
@@ -111,7 +114,9 @@ def test_offline_training_reports_real_evaluation_returns(tmp_path: Path) -> Non
         offline_only=True,
         offline_updates=400,
     )
-    result = run_tabular_training(agent, _POLICY, _GRID, _runner(train_episodes=4, eval_episodes=5), buffer)
+    result = run_tabular_training(
+        agent, _POLICY, _GRID, _runner(train_episodes=4, eval_episodes=5), buffer
+    )
 
     # Fix #2: offline runs used to report all-zero train returns and no eval.
     assert len(result.eval_returns) == 5

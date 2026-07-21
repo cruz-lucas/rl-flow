@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -101,7 +102,9 @@ def sixarms_environment(config: dict[str, Any]) -> EnvironmentConfig:
 
 def navix_environment(config: dict[str, Any]) -> EnvironmentConfig:
     if config["observation_mode"] != "tabular":
-        raise ValueError("builtin.runner.tabular_jax requires navix.env.grid observation_mode='tabular'")
+        raise ValueError(
+            "builtin.runner.tabular_jax requires navix.env.grid observation_mode='tabular'"
+        )
 
     from rlflow_builtin.environments.navix import create_navix_environment
 
@@ -134,7 +137,9 @@ def initial_state(config: EnvironmentConfig, key: jax.Array) -> jax.Array:
     return jnp.asarray(config.start_state, dtype=jnp.int32)
 
 
-def make_step_fn(config: EnvironmentConfig) -> Callable[[jax.Array, jax.Array, jax.Array], tuple[jax.Array, jax.Array, jax.Array]]:
+def make_step_fn(
+    config: EnvironmentConfig,
+) -> Callable[[jax.Array, jax.Array, jax.Array], tuple[jax.Array, jax.Array, jax.Array]]:
     if config.name == "navix":
         raise ValueError("Navix environments use the dedicated Navix tabular runner path")
     if config.name == "riverswim":
@@ -142,7 +147,9 @@ def make_step_fn(config: EnvironmentConfig) -> Callable[[jax.Array, jax.Array, j
     if config.name == "sixarms":
         success_probabilities = jnp.asarray(config.success_probabilities, dtype=jnp.float32)
         arm_rewards = jnp.asarray(config.arm_rewards, dtype=jnp.float32)
-        return lambda state, action, key: sixarms_step(config, success_probabilities, arm_rewards, state, action, key)
+        return lambda state, action, key: sixarms_step(
+            config, success_probabilities, arm_rewards, state, action, key
+        )
     pit_states = jnp.asarray(config.pit_states, dtype=jnp.int32)
     return lambda state, action, key: gridworld_step(config, pit_states, state, action, key)
 
@@ -157,8 +164,12 @@ def gridworld_step(
     action = maybe_slip(action, key, config.num_actions, config.slip_probability)
     row = state // config.width
     col = state % config.width
-    next_row = jnp.clip(row + jnp.where(action == 2, 1, jnp.where(action == 0, -1, 0)), 0, config.height - 1)
-    next_col = jnp.clip(col + jnp.where(action == 1, 1, jnp.where(action == 3, -1, 0)), 0, config.width - 1)
+    next_row = jnp.clip(
+        row + jnp.where(action == 2, 1, jnp.where(action == 0, -1, 0)), 0, config.height - 1
+    )
+    next_col = jnp.clip(
+        col + jnp.where(action == 1, 1, jnp.where(action == 3, -1, 0)), 0, config.width - 1
+    )
     next_state = (next_row * config.width + next_col).astype(jnp.int32)
     is_goal = next_state == config.goal_state
     is_pit = jnp.any(next_state == pit_states)
@@ -176,21 +187,28 @@ def riverswim_step(config: EnvironmentConfig, state: jax.Array, action: jax.Arra
     action = action.astype(jnp.int32)
     last_state = config.num_states - 1
     delta_candidates = jnp.asarray([-1, 0, 1], dtype=jnp.int32)
-    interior_right_probabilities = jnp.asarray([config.p_left, config.p_stay, config.p_right], dtype=jnp.float32)
-    right_edge_probabilities = jnp.asarray([1.0 - config.p_right, 0.0, config.p_right], dtype=jnp.float32)
-    probabilities = jnp.where(state == last_state, right_edge_probabilities, interior_right_probabilities)
+    interior_right_probabilities = jnp.asarray(
+        [config.p_left, config.p_stay, config.p_right], dtype=jnp.float32
+    )
+    right_edge_probabilities = jnp.asarray(
+        [1.0 - config.p_right, 0.0, config.p_right], dtype=jnp.float32
+    )
+    probabilities = jnp.where(
+        state == last_state, right_edge_probabilities, interior_right_probabilities
+    )
     right_delta = jax.random.choice(key, delta_candidates, p=probabilities)
     right_state = jnp.clip(state + right_delta, 0, last_state)
     left_state = jnp.clip(state - 1, 0, last_state)
     next_state = jnp.where(action == 0, left_state, right_state).astype(jnp.int32)
 
     same_state = state == next_state
-    easy_reward = jnp.logical_and(action == 0, state == 0).astype(jnp.float32) * config.easy_reward
-    hard_reward = (
-        jnp.logical_and(jnp.logical_and(action == 1, same_state), state == last_state).astype(jnp.float32)
-        * config.hard_reward
+    is_easy = jnp.logical_and(action == 0, state == 0)
+    is_hard = jnp.logical_and(jnp.logical_and(action == 1, same_state), state == last_state)
+    reward = jnp.where(
+        is_easy,
+        config.easy_reward,
+        jnp.where(is_hard, config.hard_reward, config.step_reward),
     )
-    reward = jnp.where((easy_reward + hard_reward) > 0.0, easy_reward + hard_reward, config.step_reward)
     return next_state, reward.astype(jnp.float32), jnp.asarray(False, dtype=jnp.bool_)
 
 
@@ -229,7 +247,9 @@ def sixarms_step(
     return next_state, reward.astype(jnp.float32), jnp.asarray(False, dtype=jnp.bool_)
 
 
-def maybe_slip(action: jax.Array, key: jax.Array, num_actions: int, slip_probability: float) -> jax.Array:
+def maybe_slip(
+    action: jax.Array, key: jax.Array, num_actions: int, slip_probability: float
+) -> jax.Array:
     slip_key, action_key = jax.random.split(key)
     slipped_action = jax.random.randint(action_key, (), 0, num_actions, dtype=jnp.int32)
     should_slip = jax.random.uniform(slip_key) < slip_probability

@@ -21,10 +21,7 @@ from rlflow.registry.base import ComponentRegistry
 from rlflow.schemas.sweep import SweepCompilation, SweepParameter, SweepSpec, SweepTrial
 from rlflow.schemas.workflow import WorkflowSpec
 
-
-_TRAIN_HISTORY_METRIC_RE = re.compile(
-    r"^mean_train_(return|discounted_return)_last_(\d+)$"
-)
+_TRAIN_HISTORY_METRIC_RE = re.compile(r"^mean_train_(return|discounted_return)_last_(\d+)$")
 
 
 class SweepCompilationError(ValueError):
@@ -60,7 +57,9 @@ class SweepCompiler:
         trial_values = self._expand_trials(spec)
         if not trial_values:
             raise SweepCompilationError("Sweep did not produce any trials")
-        slurm_array_task_count = self._slurm_array_task_count(len(trial_values), spec.slurm.trials_per_task)
+        slurm_array_task_count = self._slurm_array_task_count(
+            len(trial_values), spec.slurm.trials_per_task
+        )
         if base_workflow.execution.backend == "slurm" and spec.slurm.max_array_tasks is not None:
             if slurm_array_task_count > spec.slurm.max_array_tasks:
                 raise SweepCompilationError(
@@ -76,7 +75,9 @@ class SweepCompiler:
         group_ids: dict[str, str] = {}
         for index, parameters in enumerate(trial_values):
             trial_id = f"trial-{index:04d}"
-            group_id, group_run_dir, seed_value = self._trial_group(sweep_dir, parameters, group_ids)
+            group_id, group_run_dir, seed_value = self._trial_group(
+                sweep_dir, parameters, group_ids
+            )
             experiment_id = slugify_run_name(f"{sweep_id}-{trial_id}")
             workflow = self._trial_workflow(
                 base_workflow,
@@ -117,9 +118,7 @@ class SweepCompiler:
             manifest_path=str(sweep_dir / "sweep_manifest.yaml"),
             slurm_trials_per_task=spec.slurm.trials_per_task,
             slurm_array_task_count=(
-                slurm_array_task_count
-                if base_workflow.execution.backend == "slurm"
-                else None
+                slurm_array_task_count if base_workflow.execution.backend == "slurm" else None
             ),
             trials=trials,
             generated_files=generated_files,
@@ -211,7 +210,11 @@ class SweepCompiler:
         from rlflow.analysis.loading import load_sweep_manifest
 
         compilation = load_sweep_manifest(manifest_path)
-        output_dir = Path(out_dir) if out_dir is not None else Path(compilation.sweep_dir) / "learning_curves"
+        output_dir = (
+            Path(out_dir)
+            if out_dir is not None
+            else Path(compilation.sweep_dir) / "learning_curves"
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
 
         rows = []
@@ -230,7 +233,9 @@ class SweepCompiler:
         csv_path = output_dir / f"{history}_{value}_curves.csv"
         svg_path = output_dir / f"{history}_{value}_curves.svg"
         self._write_curve_csv(csv_path, groups)
-        self._write_curve_svg(svg_path, groups, title=f"{history} {value}".replace("_", " ").title())
+        self._write_curve_svg(
+            svg_path, groups, title=f"{history} {value}".replace("_", " ").title()
+        )
         return {
             "sweep_id": compilation.sweep_id,
             "history": history,
@@ -304,11 +309,7 @@ class SweepCompiler:
         return groups
 
     def _non_seed_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
-        return {
-            key: value
-            for key, value in parameters.items()
-            if not self._is_seed_parameter(key)
-        }
+        return {key: value for key, value in parameters.items() if not self._is_seed_parameter(key)}
 
     def _is_seed_parameter(self, key: str) -> bool:
         normalized = key.lower()
@@ -321,9 +322,7 @@ class SweepCompiler:
         group_ids: dict[str, str],
     ) -> tuple[str | None, Path | None, Any | None]:
         seed_parameters = {
-            key: value
-            for key, value in parameters.items()
-            if self._is_seed_parameter(key)
+            key: value for key, value in parameters.items() if self._is_seed_parameter(key)
         }
         if not seed_parameters:
             return None, None, None
@@ -332,9 +331,7 @@ class SweepCompiler:
         key = json.dumps(group_parameters, sort_keys=True, default=str)
         group_id = group_ids.setdefault(key, f"group-{len(group_ids):04d}")
         seed_value = (
-            next(iter(seed_parameters.values()))
-            if len(seed_parameters) == 1
-            else seed_parameters
+            next(iter(seed_parameters.values())) if len(seed_parameters) == 1 else seed_parameters
         )
         return group_id, sweep_dir / "trials" / group_id, seed_value
 
@@ -352,9 +349,7 @@ class SweepCompiler:
 
     def _seed_dir_name(self, parameters: dict[str, Any], trial_id: str) -> str:
         seed_parameters = [
-            (key, value)
-            for key, value in parameters.items()
-            if self._is_seed_parameter(key)
+            (key, value) for key, value in parameters.items() if self._is_seed_parameter(key)
         ]
         if not seed_parameters:
             return trial_id
@@ -377,7 +372,9 @@ class SweepCompiler:
         if metric_name == "mean_train_return":
             return self._mean_train_history_metric(Path(trial.run_dir), "return", None)
         if metric_name == "mean_train_return_last_n":
-            return self._mean_train_history_metric(Path(trial.run_dir), "return", metric_last_n or 10)
+            return self._mean_train_history_metric(
+                Path(trial.run_dir), "return", metric_last_n or 10
+            )
         if metric_name == "mean_train_discounted_return":
             return self._mean_train_history_metric(Path(trial.run_dir), "discounted_return", None)
         if metric_name == "mean_train_discounted_return_last_n":
@@ -624,13 +621,18 @@ class SweepCompiler:
             color = colors[index % len(colors)]
             points = group["points"]
             upper = [(sx(float(point["episode"])), sy(float(point["ci_high"]))) for point in points]
-            lower = [(sx(float(point["episode"])), sy(float(point["ci_low"]))) for point in reversed(points)]
+            lower = [
+                (sx(float(point["episode"])), sy(float(point["ci_low"])))
+                for point in reversed(points)
+            ]
             band = " ".join(f"{x:.2f},{y:.2f}" for x, y in [*upper, *lower])
             line = " ".join(
-                f'{sx(float(point["episode"])):.2f},{sy(float(point["mean"])):.2f}'
+                f"{sx(float(point['episode'])):.2f},{sy(float(point['mean'])):.2f}"
                 for point in points
             )
-            label = html.escape(json.dumps(group["parameters"], sort_keys=True, default=str) or "{}")
+            label = html.escape(
+                json.dumps(group["parameters"], sort_keys=True, default=str) or "{}"
+            )
             parts.extend(
                 [
                     f'<polygon points="{band}" fill="{color}" opacity="0.16"/>',
@@ -641,7 +643,9 @@ class SweepCompiler:
         parts.append("</svg>")
         path.write_text("\n".join(parts), encoding="utf-8")
 
-    def _load_workflow(self, workflow: str | WorkflowSpec, *, base_path: str | Path | None) -> WorkflowSpec:
+    def _load_workflow(
+        self, workflow: str | WorkflowSpec, *, base_path: str | Path | None
+    ) -> WorkflowSpec:
         if isinstance(workflow, WorkflowSpec):
             return workflow.model_copy(deep=True)
 
@@ -665,10 +669,7 @@ class SweepCompiler:
             spaces.append((label, parameter.values))
         labels = [label for label, _ in spaces]
         value_lists = [values for _, values in spaces]
-        return [
-            dict(zip(labels, values, strict=True))
-            for values in product(*value_lists)
-        ]
+        return [dict(zip(labels, values, strict=True)) for values in product(*value_lists)]
 
     def _expand_random(self, spec: SweepSpec) -> list[dict[str, Any]]:
         rng = random.Random(spec.seed)

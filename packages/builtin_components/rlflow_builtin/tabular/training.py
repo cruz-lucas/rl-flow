@@ -7,7 +7,13 @@ import jax.numpy as jnp
 import numpy as np
 
 from rlflow_builtin.tabular.agents import apply_td_update
-from rlflow_builtin.tabular.buffers import initial_replay_buffer, no_buffer_config, push_transition, replay_dataset_arrays, sample_batch
+from rlflow_builtin.tabular.buffers import (
+    initial_replay_buffer,
+    no_buffer_config,
+    push_transition,
+    replay_dataset_arrays,
+    sample_batch,
+)
 from rlflow_builtin.tabular.environments import initial_state, make_step_fn
 from rlflow_builtin.tabular.policies import greedy, select_action
 from rlflow_builtin.tabular.types import (
@@ -106,10 +112,34 @@ def run_tabular_training(
         done = jnp.asarray(False)
 
         def step_fn(step_carry, _):
-            q, counts, buffer_state, key, state, action, episode_return, episode_discounted_return, episode_length, episode_loss, done = step_carry
+            (
+                q,
+                counts,
+                buffer_state,
+                key,
+                state,
+                action,
+                episode_return,
+                episode_discounted_return,
+                episode_length,
+                episode_loss,
+                done,
+            ) = step_carry
 
             def active_step(active_carry):
-                q, counts, buffer_state, key, state, action, episode_return, episode_discounted_return, episode_length, episode_loss, _ = active_carry
+                (
+                    q,
+                    counts,
+                    buffer_state,
+                    key,
+                    state,
+                    action,
+                    episode_return,
+                    episode_discounted_return,
+                    episode_length,
+                    episode_loss,
+                    _,
+                ) = active_carry
                 key, env_key, next_action_key, replay_key = jax.random.split(key, 4)
                 next_state, reward, terminal = env_step(state, action, env_key)
                 updated_counts = counts.at[state, action].add(1.0)
@@ -149,7 +179,9 @@ def run_tabular_training(
                         environment.num_actions,
                     )
                 )
-                updated_buffer = _push_if_enabled(replay_buffer, buffer_state, state, action, reward, next_state, terminal)
+                updated_buffer = _push_if_enabled(
+                    replay_buffer, buffer_state, state, action, reward, next_state, terminal
+                )
                 updated_q, replay_loss = _replay_if_ready(
                     agent,
                     policy,
@@ -169,7 +201,7 @@ def run_tabular_training(
                     next_state,
                     executed_next_action,
                     episode_return + reward,
-                    episode_discounted_return + (agent.discount ** episode_length) * reward,
+                    episode_discounted_return + (agent.discount**episode_length) * reward,
                     episode_length + 1,
                     episode_loss + total_loss,
                     terminal,
@@ -184,13 +216,42 @@ def run_tabular_training(
 
         carry_out, _ = jax.lax.scan(
             step_fn,
-            (q, counts, buffer_state, episode_key, state, action, episode_return, episode_discounted_return, episode_length, episode_loss, done),
+            (
+                q,
+                counts,
+                buffer_state,
+                episode_key,
+                state,
+                action,
+                episode_return,
+                episode_discounted_return,
+                episode_length,
+                episode_loss,
+                done,
+            ),
             xs=None,
             length=runner.max_episode_steps,
         )
-        q, counts, buffer_state, _, _, _, episode_return, episode_discounted_return, episode_length, episode_loss, _ = carry_out
+        (
+            q,
+            counts,
+            buffer_state,
+            _,
+            _,
+            _,
+            episode_return,
+            episode_discounted_return,
+            episode_length,
+            episode_loss,
+            _,
+        ) = carry_out
         mean_loss = episode_loss / jnp.maximum(episode_length, 1)
-        return (q, counts, buffer_state, scan_key), (episode_return, episode_discounted_return, episode_length, mean_loss)
+        return (q, counts, buffer_state, scan_key), (
+            episode_return,
+            episode_discounted_return,
+            episode_length,
+            mean_loss,
+        )
 
     def evaluate_episode(scan_key):
         scan_key, episode_key, reset_key = jax.random.split(scan_key, 3)
@@ -204,7 +265,9 @@ def run_tabular_training(
             key, state, episode_return, episode_discounted_return, episode_length, done = step_carry
 
             def active_step(active_carry):
-                key, state, episode_return, episode_discounted_return, episode_length, _ = active_carry
+                key, state, episode_return, episode_discounted_return, episode_length, _ = (
+                    active_carry
+                )
                 key, action_key, env_key = jax.random.split(key, 3)
                 action = select_action(
                     policy,
@@ -219,7 +282,7 @@ def run_tabular_training(
                     key,
                     next_state,
                     episode_return + reward,
-                    episode_discounted_return + (agent.discount ** episode_length) * reward,
+                    episode_discounted_return + (agent.discount**episode_length) * reward,
                     episode_length + 1,
                     terminal,
                 )
@@ -308,10 +371,28 @@ def _run_rmax_tabular_training(
         done = jnp.asarray(False)
 
         def step_fn(step_carry, _):
-            model, key, state, episode_return, episode_discounted_return, episode_length, episode_loss, done = step_carry
+            (
+                model,
+                key,
+                state,
+                episode_return,
+                episode_discounted_return,
+                episode_length,
+                episode_loss,
+                done,
+            ) = step_carry
 
             def active_step(active_carry):
-                model, key, state, episode_return, episode_discounted_return, episode_length, episode_loss, _ = active_carry
+                (
+                    model,
+                    key,
+                    state,
+                    episode_return,
+                    episode_discounted_return,
+                    episode_length,
+                    episode_loss,
+                    _,
+                ) = active_carry
                 key, action_key, env_key = jax.random.split(key, 3)
                 action = _rmax_action(model.q_table, state, action_key, environment.num_actions)
                 next_state, reward, terminal = env_step(state, action, env_key)
@@ -329,7 +410,7 @@ def _run_rmax_tabular_training(
                     key,
                     next_state,
                     episode_return + reward,
-                    episode_discounted_return + (agent.discount ** episode_length) * reward,
+                    episode_discounted_return + (agent.discount**episode_length) * reward,
                     episode_length + 1,
                     episode_loss + q_delta,
                     terminal,
@@ -344,13 +425,29 @@ def _run_rmax_tabular_training(
 
         carry_out, _ = jax.lax.scan(
             step_fn,
-            (model, episode_key, state, episode_return, episode_discounted_return, episode_length, episode_loss, done),
+            (
+                model,
+                episode_key,
+                state,
+                episode_return,
+                episode_discounted_return,
+                episode_length,
+                episode_loss,
+                done,
+            ),
             xs=None,
             length=runner.max_episode_steps,
         )
-        model, _, _, episode_return, episode_discounted_return, episode_length, episode_loss, _ = carry_out
+        model, _, _, episode_return, episode_discounted_return, episode_length, episode_loss, _ = (
+            carry_out
+        )
         mean_loss = episode_loss / jnp.maximum(episode_length, 1)
-        return (model, scan_key), (episode_return, episode_discounted_return, episode_length, mean_loss)
+        return (model, scan_key), (
+            episode_return,
+            episode_discounted_return,
+            episode_length,
+            mean_loss,
+        )
 
     def evaluate_episode(scan_key):
         scan_key, episode_key, reset_key = jax.random.split(scan_key, 3)
@@ -364,7 +461,9 @@ def _run_rmax_tabular_training(
             key, state, episode_return, episode_discounted_return, episode_length, done = step_carry
 
             def active_step(active_carry):
-                key, state, episode_return, episode_discounted_return, episode_length, _ = active_carry
+                key, state, episode_return, episode_discounted_return, episode_length, _ = (
+                    active_carry
+                )
                 key, action_key, env_key = jax.random.split(key, 3)
                 action = _rmax_action(q_final, state, action_key, environment.num_actions)
                 next_state, reward, terminal = env_step(state, action, env_key)
@@ -372,7 +471,7 @@ def _run_rmax_tabular_training(
                     key,
                     next_state,
                     episode_return + reward,
-                    episode_discounted_return + (agent.discount ** episode_length) * reward,
+                    episode_discounted_return + (agent.discount**episode_length) * reward,
                     episode_length + 1,
                     terminal,
                 )
@@ -467,10 +566,30 @@ def _run_navix_rmax_tabular_training(
         done = jnp.asarray(False)
 
         def step_fn(step_carry, _):
-            model, key, timestep, state, episode_return, episode_discounted_return, episode_length, episode_loss, done = step_carry
+            (
+                model,
+                key,
+                timestep,
+                state,
+                episode_return,
+                episode_discounted_return,
+                episode_length,
+                episode_loss,
+                done,
+            ) = step_carry
 
             def active_step(active_carry):
-                model, key, timestep, state, episode_return, episode_discounted_return, episode_length, episode_loss, _ = active_carry
+                (
+                    model,
+                    key,
+                    timestep,
+                    state,
+                    episode_return,
+                    episode_discounted_return,
+                    episode_length,
+                    episode_loss,
+                    _,
+                ) = active_carry
                 key, action_key = jax.random.split(key)
                 action = _rmax_action(model.q_table, state, action_key, environment.num_actions)
                 next_timestep = navix_env.step(timestep, action)
@@ -493,7 +612,7 @@ def _run_navix_rmax_tabular_training(
                     next_timestep,
                     next_state,
                     episode_return + reward,
-                    episode_discounted_return + (agent.discount ** episode_length) * reward,
+                    episode_discounted_return + (agent.discount**episode_length) * reward,
                     episode_length + 1,
                     episode_loss + q_delta,
                     episode_done,
@@ -508,13 +627,38 @@ def _run_navix_rmax_tabular_training(
 
         carry_out, _ = jax.lax.scan(
             step_fn,
-            (model, episode_key, timestep, state, episode_return, episode_discounted_return, episode_length, episode_loss, done),
+            (
+                model,
+                episode_key,
+                timestep,
+                state,
+                episode_return,
+                episode_discounted_return,
+                episode_length,
+                episode_loss,
+                done,
+            ),
             xs=None,
             length=runner.max_episode_steps,
         )
-        model, _, _, _, episode_return, episode_discounted_return, episode_length, episode_loss, _ = carry_out
+        (
+            model,
+            _,
+            _,
+            _,
+            episode_return,
+            episode_discounted_return,
+            episode_length,
+            episode_loss,
+            _,
+        ) = carry_out
         mean_loss = episode_loss / jnp.maximum(episode_length, 1)
-        return (model, scan_key), (episode_return, episode_discounted_return, episode_length, mean_loss)
+        return (model, scan_key), (
+            episode_return,
+            episode_discounted_return,
+            episode_length,
+            mean_loss,
+        )
 
     def evaluate_episode(scan_key):
         scan_key, episode_key, reset_key = jax.random.split(scan_key, 3)
@@ -526,10 +670,26 @@ def _run_navix_rmax_tabular_training(
         done = jnp.asarray(False)
 
         def step_fn(step_carry, _):
-            key, timestep, state, episode_return, episode_discounted_return, episode_length, done = step_carry
+            (
+                key,
+                timestep,
+                state,
+                episode_return,
+                episode_discounted_return,
+                episode_length,
+                done,
+            ) = step_carry
 
             def active_step(active_carry):
-                key, timestep, state, episode_return, episode_discounted_return, episode_length, _ = active_carry
+                (
+                    key,
+                    timestep,
+                    state,
+                    episode_return,
+                    episode_discounted_return,
+                    episode_length,
+                    _,
+                ) = active_carry
                 key, action_key = jax.random.split(key)
                 action = _rmax_action(q_final, state, action_key, environment.num_actions)
                 next_timestep = navix_env.step(timestep, action)
@@ -540,7 +700,7 @@ def _run_navix_rmax_tabular_training(
                     next_timestep,
                     next_state,
                     episode_return + reward,
-                    episode_discounted_return + (agent.discount ** episode_length) * reward,
+                    episode_discounted_return + (agent.discount**episode_length) * reward,
                     episode_length + 1,
                     next_timestep.is_done(),
                 )
@@ -554,7 +714,15 @@ def _run_navix_rmax_tabular_training(
 
         carry_out, _ = jax.lax.scan(
             step_fn,
-            (episode_key, timestep, state, episode_return, episode_discounted_return, episode_length, done),
+            (
+                episode_key,
+                timestep,
+                state,
+                episode_return,
+                episode_discounted_return,
+                episode_length,
+                done,
+            ),
             xs=None,
             length=runner.max_episode_steps,
         )
@@ -625,7 +793,9 @@ def _initial_rmax_model(agent: AgentConfig, environment: EnvironmentConfig) -> R
     )
 
 
-def _rmax_action(q_table: jax.Array, state: jax.Array, key: jax.Array, num_actions: int) -> jax.Array:
+def _rmax_action(
+    q_table: jax.Array, state: jax.Array, key: jax.Array, num_actions: int
+) -> jax.Array:
     return greedy(q_table[state], key, num_actions)
 
 
@@ -644,7 +814,9 @@ def _rmax_observe_transition(
     model_counts = model.model_counts.at[state, action].add(model_update)
     reward_sums = model.reward_sums.at[state, action].add(reward.astype(jnp.float32) * model_update)
     nonterminal = jnp.logical_not(terminal).astype(jnp.float32)
-    transition_counts = model.transition_counts.at[state, action, next_state].add(nonterminal * model_update)
+    transition_counts = model.transition_counts.at[state, action, next_state].add(
+        nonterminal * model_update
+    )
     became_known = jnp.logical_and(
         was_unknown,
         model_counts[state, action] >= float(agent.known_count_threshold),
@@ -720,7 +892,11 @@ def _run_offline_tabular_training(
     action_counts = jnp.zeros_like(q_table)
     key = jax.random.PRNGKey(runner.seed)
     train_episodes = _runner_train_episodes(runner)
-    total_updates = replay_buffer.offline_updates or runner.train_steps or train_episodes * runner.max_episode_steps
+    total_updates = (
+        replay_buffer.offline_updates
+        or runner.train_steps
+        or train_episodes * runner.max_episode_steps
+    )
     updates_per_epoch = max(1, int(np.ceil(total_updates / train_episodes)))
 
     def train_epoch(carry, _):
@@ -780,7 +956,9 @@ def _run_offline_tabular_training(
             length=train_episodes,
         )
 
-    (q_final, action_counts_final, eval_key), train_history = run_train_scan(q_table, action_counts, key)
+    (q_final, action_counts_final, eval_key), train_history = run_train_scan(
+        q_table, action_counts, key
+    )
     train_returns, train_discounted_returns, train_lengths, train_losses = train_history
 
     if runner.eval_episodes > 0 and environment.name != "navix":
@@ -795,10 +973,14 @@ def _run_offline_tabular_training(
             done = jnp.asarray(False)
 
             def step_fn(step_carry, _):
-                key, state, episode_return, episode_discounted_return, episode_length, done = step_carry
+                key, state, episode_return, episode_discounted_return, episode_length, done = (
+                    step_carry
+                )
 
                 def active_step(active_carry):
-                    key, state, episode_return, episode_discounted_return, episode_length, _ = active_carry
+                    key, state, episode_return, episode_discounted_return, episode_length, _ = (
+                        active_carry
+                    )
                     key, action_key, env_key = jax.random.split(key, 3)
                     action = select_action(
                         policy,
@@ -813,7 +995,7 @@ def _run_offline_tabular_training(
                         key,
                         next_state,
                         episode_return + reward,
-                        episode_discounted_return + (agent.discount ** episode_length) * reward,
+                        episode_discounted_return + (agent.discount**episode_length) * reward,
                         episode_length + 1,
                         terminal,
                     )
@@ -827,7 +1009,14 @@ def _run_offline_tabular_training(
 
             carry_out, _ = jax.lax.scan(
                 step_fn,
-                (episode_key, state, episode_return, episode_discounted_return, episode_length, done),
+                (
+                    episode_key,
+                    state,
+                    episode_return,
+                    episode_discounted_return,
+                    episode_length,
+                    done,
+                ),
                 xs=None,
                 length=runner.max_episode_steps,
             )
@@ -914,10 +1103,36 @@ def _run_navix_tabular_training(
         done = jnp.asarray(False)
 
         def step_fn(step_carry, _):
-            q, counts, buffer_state, key, timestep, state, action, episode_return, episode_discounted_return, episode_length, episode_loss, done = step_carry
+            (
+                q,
+                counts,
+                buffer_state,
+                key,
+                timestep,
+                state,
+                action,
+                episode_return,
+                episode_discounted_return,
+                episode_length,
+                episode_loss,
+                done,
+            ) = step_carry
 
             def active_step(active_carry):
-                q, counts, buffer_state, key, timestep, state, action, episode_return, episode_discounted_return, episode_length, episode_loss, _ = active_carry
+                (
+                    q,
+                    counts,
+                    buffer_state,
+                    key,
+                    timestep,
+                    state,
+                    action,
+                    episode_return,
+                    episode_discounted_return,
+                    episode_length,
+                    episode_loss,
+                    _,
+                ) = active_carry
                 key, next_action_key, replay_key = jax.random.split(key, 3)
                 next_timestep = navix_env.step(timestep, action)
                 next_state = next_timestep.observation.astype(jnp.int32)
@@ -989,7 +1204,7 @@ def _run_navix_tabular_training(
                     next_state,
                     executed_next_action,
                     episode_return + reward,
-                    episode_discounted_return + (agent.discount ** episode_length) * reward,
+                    episode_discounted_return + (agent.discount**episode_length) * reward,
                     episode_length + 1,
                     episode_loss + total_loss,
                     terminal,
@@ -1004,13 +1219,44 @@ def _run_navix_tabular_training(
 
         carry_out, _ = jax.lax.scan(
             step_fn,
-            (q, counts, buffer_state, episode_key, timestep, state, action, episode_return, episode_discounted_return, episode_length, episode_loss, done),
+            (
+                q,
+                counts,
+                buffer_state,
+                episode_key,
+                timestep,
+                state,
+                action,
+                episode_return,
+                episode_discounted_return,
+                episode_length,
+                episode_loss,
+                done,
+            ),
             xs=None,
             length=runner.max_episode_steps,
         )
-        q, counts, buffer_state, _, _, _, _, episode_return, episode_discounted_return, episode_length, episode_loss, _ = carry_out
+        (
+            q,
+            counts,
+            buffer_state,
+            _,
+            _,
+            _,
+            _,
+            episode_return,
+            episode_discounted_return,
+            episode_length,
+            episode_loss,
+            _,
+        ) = carry_out
         mean_loss = episode_loss / jnp.maximum(episode_length, 1)
-        return (q, counts, buffer_state, scan_key), (episode_return, episode_discounted_return, episode_length, mean_loss)
+        return (q, counts, buffer_state, scan_key), (
+            episode_return,
+            episode_discounted_return,
+            episode_length,
+            mean_loss,
+        )
 
     def evaluate_episode(scan_key):
         scan_key, episode_key, reset_key = jax.random.split(scan_key, 3)
@@ -1022,10 +1268,26 @@ def _run_navix_tabular_training(
         done = jnp.asarray(False)
 
         def step_fn(step_carry, _):
-            key, timestep, state, episode_return, episode_discounted_return, episode_length, done = step_carry
+            (
+                key,
+                timestep,
+                state,
+                episode_return,
+                episode_discounted_return,
+                episode_length,
+                done,
+            ) = step_carry
 
             def active_step(active_carry):
-                key, timestep, state, episode_return, episode_discounted_return, episode_length, _ = active_carry
+                (
+                    key,
+                    timestep,
+                    state,
+                    episode_return,
+                    episode_discounted_return,
+                    episode_length,
+                    _,
+                ) = active_carry
                 key, action_key = jax.random.split(key)
                 action = select_action(
                     policy,
@@ -1043,7 +1305,7 @@ def _run_navix_tabular_training(
                     next_timestep,
                     next_state,
                     episode_return + reward,
-                    episode_discounted_return + (agent.discount ** episode_length) * reward,
+                    episode_discounted_return + (agent.discount**episode_length) * reward,
                     episode_length + 1,
                     next_timestep.is_done(),
                 )
@@ -1057,7 +1319,15 @@ def _run_navix_tabular_training(
 
         carry_out, _ = jax.lax.scan(
             step_fn,
-            (episode_key, timestep, state, episode_return, episode_discounted_return, episode_length, done),
+            (
+                episode_key,
+                timestep,
+                state,
+                episode_return,
+                episode_discounted_return,
+                episode_length,
+                done,
+            ),
             xs=None,
             length=runner.max_episode_steps,
         )
@@ -1218,7 +1488,9 @@ def _update_replay_transition(
     return (updated_q, key), td_loss
 
 
-def _combine_losses(replay_buffer: BufferConfig, td_loss: jax.Array, replay_loss: jax.Array) -> jax.Array:
+def _combine_losses(
+    replay_buffer: BufferConfig, td_loss: jax.Array, replay_loss: jax.Array
+) -> jax.Array:
     if not replay_buffer.enabled or replay_buffer.updates_per_step <= 0:
         return td_loss
     denominator = jnp.where(replay_loss > 0.0, 2.0, 1.0)

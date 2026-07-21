@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import socket
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Literal
@@ -36,7 +36,7 @@ class RunStatus(BaseModel):
 
 
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def load_status(run_dir_or_path: str | Path) -> RunStatus | None:
@@ -76,13 +76,21 @@ def update_status(
     host = hostname
     if host is None and previous is not None:
         host = previous.hostname
-    if state in {RunStatusState.running, RunStatusState.completed, RunStatusState.failed, RunStatusState.cancelled}:
+    if state in {
+        RunStatusState.running,
+        RunStatusState.completed,
+        RunStatusState.failed,
+        RunStatusState.cancelled,
+    }:
         host = host or socket.gethostname()
 
     started_at = previous.started_at if previous is not None else None
     if state == RunStatusState.running and started_at is None:
         started_at = now
-    if state in {RunStatusState.completed, RunStatusState.failed, RunStatusState.cancelled} and started_at is None:
+    if (
+        state in {RunStatusState.completed, RunStatusState.failed, RunStatusState.cancelled}
+        and started_at is None
+    ):
         started_at = now
 
     finished_at = previous.finished_at if previous is not None else None
@@ -97,8 +105,12 @@ def update_status(
         updated_at=now,
         started_at=started_at,
         finished_at=finished_at,
-        exit_code=exit_code if exit_code is not None else (previous.exit_code if previous is not None else None),
-        message=message if message is not None else (previous.message if previous is not None else None),
+        exit_code=exit_code
+        if exit_code is not None
+        else (previous.exit_code if previous is not None else None),
+        message=message
+        if message is not None
+        else (previous.message if previous is not None else None),
         hostname=host,
         backend=clean_backend or (previous.backend if previous is not None else None),
         external_id=clean_external_id or (previous.external_id if previous is not None else None),

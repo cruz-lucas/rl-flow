@@ -55,9 +55,19 @@ def _dqn_workflow() -> dict:
             },
         ],
         "edges": [
-            {"from_node": "env", "from_port": "environment", "to_node": "runner", "to_port": "environment"},
+            {
+                "from_node": "env",
+                "from_port": "environment",
+                "to_node": "runner",
+                "to_port": "environment",
+            },
             {"from_node": "agent", "from_port": "agent", "to_node": "runner", "to_port": "agent"},
-            {"from_node": "replay", "from_port": "replay_buffer", "to_node": "runner", "to_port": "replay_buffer"},
+            {
+                "from_node": "replay",
+                "from_port": "replay_buffer",
+                "to_node": "runner",
+                "to_port": "replay_buffer",
+            },
         ],
     }
 
@@ -100,9 +110,19 @@ def _tabular_workflow() -> dict:
             },
         ],
         "edges": [
-            {"from_node": "env", "from_port": "environment", "to_node": "runner", "to_port": "environment"},
+            {
+                "from_node": "env",
+                "from_port": "environment",
+                "to_node": "runner",
+                "to_port": "environment",
+            },
             {"from_node": "agent", "from_port": "agent", "to_node": "runner", "to_port": "agent"},
-            {"from_node": "policy", "from_port": "policy", "to_node": "runner", "to_port": "policy"},
+            {
+                "from_node": "policy",
+                "from_port": "policy",
+                "to_node": "runner",
+                "to_port": "policy",
+            },
         ],
     }
 
@@ -139,7 +159,9 @@ def test_sweep_compiler_writes_trial_workflows_and_slurm_array(tmp_path: Path) -
         }
     )
 
-    compilation = SweepCompiler(create_default_registry(discover=False)).compile(spec, out_dir=tmp_path)
+    compilation = SweepCompiler(create_default_registry(discover=False)).compile(
+        spec, out_dir=tmp_path
+    )
 
     assert len(compilation.trials) == 4
     assert Path(compilation.manifest_path).exists()
@@ -192,7 +214,9 @@ def test_random_sweep_expands_seed_values_for_each_sampled_configuration(tmp_pat
         }
     )
 
-    compilation = SweepCompiler(create_default_registry(discover=False)).compile(spec, out_dir=tmp_path)
+    compilation = SweepCompiler(create_default_registry(discover=False)).compile(
+        spec, out_dir=tmp_path
+    )
 
     assert len(compilation.trials) == 6
     assert [trial.group_id for trial in compilation.trials] == [
@@ -217,7 +241,9 @@ def test_random_sweep_expands_seed_values_for_each_sampled_configuration(tmp_pat
     workflow = yaml.safe_load(Path(compilation.trials[2].workflow_path).read_text(encoding="utf-8"))
     runner = next(node for node in workflow["nodes"] if node["id"] == "runner")
     assert runner["config"]["seed"] == 2
-    assert workflow["metadata"]["sweep_group_parameters"] == {"lr": compilation.trials[0].parameters["lr"]}
+    assert workflow["metadata"]["sweep_group_parameters"] == {
+        "lr": compilation.trials[0].parameters["lr"]
+    }
 
 
 def test_sweep_compiler_rejects_slurm_arrays_over_default_task_limit(tmp_path: Path) -> None:
@@ -316,8 +342,12 @@ def test_sweep_summarize_selects_best_metric(tmp_path: Path) -> None:
     )
     compiler = SweepCompiler(create_default_registry(discover=False))
     compilation = compiler.compile(spec, out_dir=tmp_path)
-    Path(compilation.trials[0].metrics_path).write_text('{"mean_eval_return": 1.0}', encoding="utf-8")
-    Path(compilation.trials[1].metrics_path).write_text('{"mean_eval_return": 3.0}', encoding="utf-8")
+    Path(compilation.trials[0].metrics_path).write_text(
+        '{"mean_eval_return": 1.0}', encoding="utf-8"
+    )
+    Path(compilation.trials[1].metrics_path).write_text(
+        '{"mean_eval_return": 3.0}', encoding="utf-8"
+    )
 
     summary = compiler.summarize(compilation.manifest_path)
 
@@ -367,14 +397,20 @@ def test_sweep_summarize_computes_train_return_last_n_from_history(tmp_path: Pat
     assert summary["best"]["metric_count"] == 2
 
 
-def test_sweep_summarize_computes_train_discounted_return_last_n_from_history(tmp_path: Path) -> None:
+def test_sweep_summarize_computes_train_discounted_return_last_n_from_history(
+    tmp_path: Path,
+) -> None:
     spec = SweepSpec.model_validate(
         {
             "name": "discounted history sweep",
             "sweep_id": "discounted-history-sweep",
             "workflow": _tabular_workflow(),
             "method": "grid",
-            "metric": {"name": "mean_train_discounted_return_last_n", "goal": "maximize", "last_n": 2},
+            "metric": {
+                "name": "mean_train_discounted_return_last_n",
+                "goal": "maximize",
+                "last_n": 2,
+            },
             "parameters": {
                 "seed": {
                     "target": "nodes.runner.config.seed",
@@ -502,9 +538,24 @@ def test_sweep_exports_bootstrap_learning_curves(tmp_path: Path) -> None:
                     },
                 ],
                 "edges": [
-                    {"from_node": "env", "from_port": "environment", "to_node": "runner", "to_port": "environment"},
-                    {"from_node": "agent", "from_port": "agent", "to_node": "runner", "to_port": "agent"},
-                    {"from_node": "policy", "from_port": "policy", "to_node": "runner", "to_port": "policy"},
+                    {
+                        "from_node": "env",
+                        "from_port": "environment",
+                        "to_node": "runner",
+                        "to_port": "environment",
+                    },
+                    {
+                        "from_node": "agent",
+                        "from_port": "agent",
+                        "to_node": "runner",
+                        "to_port": "agent",
+                    },
+                    {
+                        "from_node": "policy",
+                        "from_port": "policy",
+                        "to_node": "runner",
+                        "to_port": "policy",
+                    },
                 ],
             },
             "method": "grid",

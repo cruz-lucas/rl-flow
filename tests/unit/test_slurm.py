@@ -8,7 +8,9 @@ from rlflow.schemas.workflow import WorkflowSpec
 from rlflow.tracking.status import load_status
 
 
-def _sweep_compilation(tmp_path: Path, trial_count: int, *, trials_per_task: int = 1) -> SweepCompilation:
+def _sweep_compilation(
+    tmp_path: Path, trial_count: int, *, trials_per_task: int = 1
+) -> SweepCompilation:
     trials = [
         SweepTrial(
             index=index,
@@ -18,7 +20,9 @@ def _sweep_compilation(tmp_path: Path, trial_count: int, *, trials_per_task: int
             run_dir=str(tmp_path / "trials" / f"trial-{index:04d}"),
             command=str(tmp_path / "trials" / f"trial-{index:04d}" / "command.sh"),
             workflow_path=str(tmp_path / "trials" / f"trial-{index:04d}" / "workflow.yaml"),
-            metrics_path=str(tmp_path / "trials" / f"trial-{index:04d}" / "summaries" / "metrics.json"),
+            metrics_path=str(
+                tmp_path / "trials" / f"trial-{index:04d}" / "summaries" / "metrics.json"
+            ),
         )
         for index in range(trial_count)
     ]
@@ -79,14 +83,18 @@ def test_slurm_executor_renders_batched_array_script(tmp_path: Path) -> None:
     assert 'if ! bash "$COMMAND"; then' in script
 
 
-def test_slurm_executor_submit_array_queues_trials_with_batch_task_ids(tmp_path: Path, monkeypatch) -> None:
+def test_slurm_executor_submit_array_queues_trials_with_batch_task_ids(
+    tmp_path: Path, monkeypatch
+) -> None:
     compilation = _sweep_compilation(tmp_path, 5, trials_per_task=2)
     Path(compilation.slurm_array_path or "").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
 
     monkeypatch.setattr("rlflow.execution.slurm.shutil.which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(
         "rlflow.execution.slurm.subprocess.run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(args=args, returncode=0, stdout="Submitted batch job 12345\n"),
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args, returncode=0, stdout="Submitted batch job 12345\n"
+        ),
     )
 
     job = SlurmExecutor().submit_array(compilation)

@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -15,10 +13,34 @@ from rlflow.analysis.aggregation import (
 def test_interpolation_produces_shared_grid_points() -> None:
     df = pd.DataFrame(
         [
-            {"trial_id": "trial-0000", "parameters": {"lr": 0.01}, "seed_value": 0, "episode": 0, "discounted_return": 1.0},
-            {"trial_id": "trial-0000", "parameters": {"lr": 0.01}, "seed_value": 0, "episode": 10, "discounted_return": 2.0},
-            {"trial_id": "trial-0001", "parameters": {"lr": 0.01}, "seed_value": 1, "episode": 0, "discounted_return": 1.5},
-            {"trial_id": "trial-0001", "parameters": {"lr": 0.01}, "seed_value": 1, "episode": 15, "discounted_return": 3.0},
+            {
+                "trial_id": "trial-0000",
+                "parameters": {"lr": 0.01},
+                "seed_value": 0,
+                "episode": 0,
+                "discounted_return": 1.0,
+            },
+            {
+                "trial_id": "trial-0000",
+                "parameters": {"lr": 0.01},
+                "seed_value": 0,
+                "episode": 10,
+                "discounted_return": 2.0,
+            },
+            {
+                "trial_id": "trial-0001",
+                "parameters": {"lr": 0.01},
+                "seed_value": 1,
+                "episode": 0,
+                "discounted_return": 1.5,
+            },
+            {
+                "trial_id": "trial-0001",
+                "parameters": {"lr": 0.01},
+                "seed_value": 1,
+                "episode": 15,
+                "discounted_return": 3.0,
+            },
         ]
     )
     interpolated = build_interpolated_curves(df, x="episode", y="discounted_return", points=5)
@@ -69,8 +91,6 @@ def test_discounted_return_falls_back_to_return_column() -> None:
 
 
 def test_missing_env_step_raises_clear_error() -> None:
-    df = pd.DataFrame(
-        [{"trial_id": "trial-0000", "parameters": {}, "episode": 0, "return": 1.0}]
-    )
+    df = pd.DataFrame([{"trial_id": "trial-0000", "parameters": {}, "episode": 0, "return": 1.0}])
     with pytest.raises(ValueError, match="histories do not contain env_step"):
         prepare_curve_dataframe(df, x="env_step", y="return")

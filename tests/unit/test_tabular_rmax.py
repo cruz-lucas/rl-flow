@@ -1,5 +1,5 @@
-import numpy as np
 import jax.numpy as jnp
+import numpy as np
 
 from rlflow_builtin.tabular.training import _initial_rmax_model, _rmax_observe_transition
 from rlflow_builtin.tabular.types import AgentConfig, EnvironmentConfig

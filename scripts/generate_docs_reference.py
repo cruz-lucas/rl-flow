@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 import click
 from typer.main import get_command
@@ -10,7 +10,6 @@ from rlflow.cli import app
 from rlflow.registry.builtin import create_default_registry
 from rlflow.schemas.component import ComponentSpec, PortSpec
 
-
 ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_DIR = ROOT / "docs" / "reference"
 
@@ -18,7 +17,9 @@ REFERENCE_DIR = ROOT / "docs" / "reference"
 def main() -> None:
     REFERENCE_DIR.mkdir(parents=True, exist_ok=True)
     (REFERENCE_DIR / "cli.md").write_text(generate_cli_reference(), encoding="utf-8")
-    (REFERENCE_DIR / "component-catalog.md").write_text(generate_component_catalog(), encoding="utf-8")
+    (REFERENCE_DIR / "component-catalog.md").write_text(
+        generate_component_catalog(), encoding="utf-8"
+    )
 
 
 def generate_cli_reference() -> str:
@@ -37,7 +38,9 @@ def generate_cli_reference() -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _walk_commands(command: click.Command, path: tuple[str, ...] = ()) -> Iterable[tuple[tuple[str, ...], click.Command]]:
+def _walk_commands(
+    command: click.Command, path: tuple[str, ...] = ()
+) -> Iterable[tuple[tuple[str, ...], click.Command]]:
     yield path, command
     if isinstance(command, click.Group):
         for name in sorted(command.commands):
@@ -76,7 +79,9 @@ def _command_section(display: str, command: click.Command) -> list[str]:
         lines.extend(["Options:", "", "| Option | Default | Description |", "| --- | --- | --- |"])
         for option in options:
             opts = ", ".join([*option.opts, *option.secondary_opts])
-            default = "" if option.default is None or option.default is False else f"`{option.default}`"
+            default = (
+                "" if option.default is None or option.default is False else f"`{option.default}`"
+            )
             help_text = (option.help or "").replace("|", "\\|")
             lines.append(f"| `{opts}` | {default} | {help_text} |")
         lines.append("")
@@ -136,18 +141,24 @@ def _ports_table(title: str, ports: list[PortSpec]) -> list[str]:
     lines.extend(["| Name | Type | Required | Description |", "| --- | --- | --- | --- |"])
     for port in ports:
         description = port.description.replace("|", "\\|")
-        lines.append(f"| `{port.name}` | `{port.type}` | {'yes' if port.required else 'no'} | {description} |")
+        lines.append(
+            f"| `{port.name}` | `{port.type}` | {'yes' if port.required else 'no'} | {description} |"
+        )
     lines.append("")
     return lines
 
 
 def _config_table(component: ComponentSpec) -> list[str]:
     properties = component.config_schema.get("properties", {}) if component.config_schema else {}
-    required = set(component.config_schema.get("required", [])) if component.config_schema else set()
+    required = (
+        set(component.config_schema.get("required", [])) if component.config_schema else set()
+    )
     lines = ["### Config Fields", ""]
     if not properties:
         return [*lines, "None.", ""]
-    lines.extend(["| Field | Type | Required | Default | Description |", "| --- | --- | --- | --- | --- |"])
+    lines.extend(
+        ["| Field | Type | Required | Default | Description |", "| --- | --- | --- | --- | --- |"]
+    )
     for name in sorted(properties):
         schema = properties[name]
         field_type = _schema_type(schema)

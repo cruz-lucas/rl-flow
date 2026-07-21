@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Literal, NamedTuple
+from typing import Any, Literal, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -12,7 +13,6 @@ import optax
 
 from rlflow_builtin.tabular.environments import environment_config, initial_state, make_step_fn
 from rlflow_builtin.tabular.types import RunnerConfig
-
 
 DQN_AGENT_COMPONENT = "builtin.agent.dqn_jax"
 DQN_RMAX_AGENT_COMPONENT = "builtin.agent.dqn_rmax_jax"
@@ -421,9 +421,7 @@ def run_dqn_training(
     knownness = knownness or none_intrinsic
     intrinsic_reward = intrinsic_reward or none_intrinsic
     shared_intrinsic = bool(
-        shared_intrinsic
-        and knownness.kind != "none"
-        and intrinsic_reward.kind != "none"
+        shared_intrinsic and knownness.kind != "none" and intrinsic_reward.kind != "none"
     )
     if agent.algorithm == "dqn_rmax" and knownness.kind == "none":
         raise ValueError("builtin.agent.dqn_rmax_jax requires a knownness_signal input")
@@ -1232,16 +1230,8 @@ def _replay_updates(
             xs=None,
             length=q_network_updates,
         )
-    intrinsic_loss = (
-        intrinsic_loss_sum / intrinsic_updates
-        if intrinsic_updates > 0
-        else zero_loss
-    )
-    q_loss = (
-        q_loss_sum / q_network_updates
-        if q_network_updates > 0
-        else zero_loss
-    )
+    intrinsic_loss = intrinsic_loss_sum / intrinsic_updates if intrinsic_updates > 0 else zero_loss
+    q_loss = q_loss_sum / q_network_updates if q_network_updates > 0 else zero_loss
     return state, intrinsic_loss + q_loss
 
 
@@ -1284,16 +1274,14 @@ def _intrinsic_update_roles_from_batch(
         num_actions,
         target_field="intrinsic_targets",
     )
-    reward_intrinsic_state, reward_intrinsic_step, reward_intrinsic_loss = (
-        _intrinsic_update_role(
-            state.reward_intrinsic_state,
-            state.reward_intrinsic_gradient_step,
-            batch,
-            intrinsic_reward,
-            reward_intrinsic_optimizer,
-            num_actions,
-            target_field="reward_intrinsic_targets",
-        )
+    reward_intrinsic_state, reward_intrinsic_step, reward_intrinsic_loss = _intrinsic_update_role(
+        state.reward_intrinsic_state,
+        state.reward_intrinsic_gradient_step,
+        batch,
+        intrinsic_reward,
+        reward_intrinsic_optimizer,
+        num_actions,
+        target_field="reward_intrinsic_targets",
     )
     return (
         state._replace(
@@ -1365,10 +1353,8 @@ def _q_update_from_batch(
         intrinsic_reward,
         num_actions,
     )
-    total_rewards = (
-        rewards
-        + intrinsic_reward.intrinsic_reward_scale
-        * jax.lax.stop_gradient(intrinsic_rewards)
+    total_rewards = rewards + intrinsic_reward.intrinsic_reward_scale * jax.lax.stop_gradient(
+        intrinsic_rewards
     )
 
     def q_loss_fn(params):
@@ -1796,13 +1782,31 @@ def _eval_episode(
     )
 
     def step_fn(carry, _):
-        key, env_state, observation, done, episode_return, discounted_return, discount_power, episode_length = carry
+        (
+            key,
+            env_state,
+            observation,
+            done,
+            episode_return,
+            discounted_return,
+            discount_power,
+            episode_length,
+        ) = carry
 
         def inactive(active_carry):
             return active_carry, None
 
         def active(active_carry):
-            key, env_state, observation, _done, episode_return, discounted_return, discount_power, episode_length = active_carry
+            (
+                key,
+                env_state,
+                observation,
+                _done,
+                episode_return,
+                discounted_return,
+                discount_power,
+                episode_length,
+            ) = active_carry
             key, action_key, env_key = jax.random.split(key, 3)
             state_id = _oracle_state_id(dqn_env, env_state, intrinsic)
             action = _select_action(
@@ -1932,7 +1936,9 @@ def _make_dqn_environment(
         reset=reset,
         step=step,
         observation=lambda state: state[0] if isinstance(state, tuple) else state,
-        reward=lambda state: state[1] if isinstance(state, tuple) else jnp.asarray(0.0, dtype=jnp.float32),
+        reward=lambda state: (
+            state[1] if isinstance(state, tuple) else jnp.asarray(0.0, dtype=jnp.float32)
+        ),
         done=lambda state: state[2] if isinstance(state, tuple) else jnp.asarray(False),
         encode=encode,
         oracle_state_id=lambda state: state[0] if isinstance(state, tuple) else state,
@@ -1947,7 +1953,9 @@ def _oracle_state_id(
 ) -> jax.Array:
     if _count_uses_oracle_tabular(intrinsic):
         if dqn_env.oracle_state_id is None:
-            raise ValueError("count_key_mode='oracle_tabular' requires an environment oracle_state_id")
+            raise ValueError(
+                "count_key_mode='oracle_tabular' requires an environment oracle_state_id"
+            )
         return jnp.asarray(dqn_env.oracle_state_id(env_state), dtype=jnp.int32)
     return jnp.asarray(0, dtype=jnp.int32)
 
@@ -1958,11 +1966,11 @@ def _oracle_state_id_for_intrinsics(
     knownness: DqnIntrinsicConfig,
     intrinsic_reward: DqnIntrinsicConfig,
 ) -> jax.Array:
-    if _count_uses_oracle_tabular(knownness) or _count_uses_oracle_tabular(
-        intrinsic_reward
-    ):
+    if _count_uses_oracle_tabular(knownness) or _count_uses_oracle_tabular(intrinsic_reward):
         if dqn_env.oracle_state_id is None:
-            raise ValueError("count_key_mode='oracle_tabular' requires an environment oracle_state_id")
+            raise ValueError(
+                "count_key_mode='oracle_tabular' requires an environment oracle_state_id"
+            )
         return jnp.asarray(dqn_env.oracle_state_id(env_state), dtype=jnp.int32)
     return jnp.asarray(0, dtype=jnp.int32)
 
@@ -2090,9 +2098,7 @@ def _initial_intrinsic_state(
             intrinsic.action_conditioning,
         )
         projection_input_dim = (
-            intrinsic.output_dim
-            if intrinsic.simhash_mode == "learned"
-            else target_input_dim
+            intrinsic.output_dim if intrinsic.simhash_mode == "learned" else target_input_dim
         )
         target_params = _init_mlp(target_key, projection_input_dim, (), intrinsic.simhash_bits)
         prior_params = _init_mlp(prior_key, 1, (), 1)
@@ -2183,14 +2189,12 @@ def _replay_arrays(
     elif knownness.kind == "cfn" and intrinsic_reward.kind == "none":
         arrays["cfn_targets"] = np.asarray(jax.device_get(state.intrinsic_targets))[:size]
     elif intrinsic_reward.kind == "cfn" and knownness.kind == "none":
-        arrays["cfn_targets"] = np.asarray(
-            jax.device_get(state.reward_intrinsic_targets)
-        )[:size]
+        arrays["cfn_targets"] = np.asarray(jax.device_get(state.reward_intrinsic_targets))[:size]
     else:
         if knownness.kind == "cfn":
-            arrays["knownness_cfn_targets"] = np.asarray(
-                jax.device_get(state.intrinsic_targets)
-            )[:size]
+            arrays["knownness_cfn_targets"] = np.asarray(jax.device_get(state.intrinsic_targets))[
+                :size
+            ]
         if intrinsic_reward.kind == "cfn":
             arrays["intrinsic_reward_cfn_targets"] = np.asarray(
                 jax.device_get(state.reward_intrinsic_targets)
@@ -2720,13 +2724,15 @@ def _intrinsic_bonus(
             num_actions,
         )
     elif intrinsic.kind == "cfn":
-        raw_bonus, _intrinsic_input, _prior_features, _predictor_features, _coin_flips = _cfn_outputs(
-            state.prior_params,
-            state.predictor_params,
-            observations,
-            actions,
-            intrinsic,
-            num_actions,
+        raw_bonus, _intrinsic_input, _prior_features, _predictor_features, _coin_flips = (
+            _cfn_outputs(
+                state.prior_params,
+                state.predictor_params,
+                observations,
+                actions,
+                intrinsic,
+                num_actions,
+            )
         )
     elif intrinsic.kind == "simhash":
         return _simhash_raw_bonus(
@@ -2787,9 +2793,7 @@ def _observe_intrinsic_transition(
     write_index = jnp.where(found, index, state.count_size)
     safe_index = jnp.minimum(write_index, state.counts.shape[0] - 1).astype(jnp.int32)
     existing_key = state.count_keys[safe_index]
-    count_keys = state.count_keys.at[safe_index].set(
-        jnp.where(should_insert, key, existing_key)
-    )
+    count_keys = state.count_keys.at[safe_index].set(jnp.where(should_insert, key, existing_key))
     counts = state.counts.at[safe_index].add(should_record.astype(jnp.float32))
     return state._replace(
         count_keys=count_keys,
@@ -3244,9 +3248,7 @@ def _handle_count_table_overflow(
         return
     table_name = "simhash_table_size" if intrinsic.kind == "simhash" else "count_table_size"
     table_size = (
-        intrinsic.simhash_table_size
-        if intrinsic.kind == "simhash"
-        else intrinsic.count_table_size
+        intrinsic.simhash_table_size if intrinsic.kind == "simhash" else intrinsic.count_table_size
     )
     overflow_mode = (
         intrinsic.simhash_table_overflow

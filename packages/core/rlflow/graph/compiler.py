@@ -44,11 +44,17 @@ class WorkflowCompiler:
             messages = "; ".join(error.message for error in validation.errors)
             raise WorkflowCompilationError(f"Workflow is invalid: {messages}")
 
-        experiment_id = str(workflow.metadata.get("experiment_id") or self._experiment_id(workflow.name))
-        run_dir = Path(out_dir) if out_dir else make_flow_run_dir(
-            "runs",
-            workflow.name,
-            experiment_id,
+        experiment_id = str(
+            workflow.metadata.get("experiment_id") or self._experiment_id(workflow.name)
+        )
+        run_dir = (
+            Path(out_dir)
+            if out_dir
+            else make_flow_run_dir(
+                "runs",
+                workflow.name,
+                experiment_id,
+            )
         )
         run_dir.mkdir(parents=True, exist_ok=True)
         run_dir = run_dir.resolve()
@@ -65,7 +71,9 @@ class WorkflowCompiler:
         gin_path = run_dir / "generated.gin"
         command_path = run_dir / "command.sh"
 
-        workflow_path.write_text(yaml.safe_dump(workflow.model_dump(), sort_keys=True), encoding="utf-8")
+        workflow_path.write_text(
+            yaml.safe_dump(workflow.model_dump(), sort_keys=True), encoding="utf-8"
+        )
         resolved_path.write_text(yaml.safe_dump(resolved_config, sort_keys=True), encoding="utf-8")
         self.gin_writer.write(gin_path, components, resolved_config)
         command = self._command(workflow, components, command_path)
@@ -138,7 +146,7 @@ class WorkflowCompiler:
                 'if [[ -x "$PYTHON_BIN" ]]; then',
                 '  STATUS_PY=("$PYTHON_BIN")',
                 '  RUNNER_PY=("$PYTHON_BIN")',
-                'elif command -v uv >/dev/null 2>&1; then',
+                "elif command -v uv >/dev/null 2>&1; then",
                 '  cd "$PROJECT_ROOT"',
                 "  STATUS_PY=(uv run python)",
                 "  RUNNER_PY=(uv run python)",

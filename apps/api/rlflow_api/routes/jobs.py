@@ -41,11 +41,7 @@ def job_logs(job_id: str, request: Request) -> str:
     logs = _executor(request, record.backend).logs(job_id)
     if logs:
         return logs
-    return "\n".join(
-        path
-        for path in [record.stdout_path, record.stderr_path]
-        if path
-    )
+    return "\n".join(path for path in [record.stdout_path, record.stderr_path] if path)
 
 
 def _refresh_job(request: Request, record: JobRecord) -> JobInfo:

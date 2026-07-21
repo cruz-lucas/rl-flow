@@ -6,9 +6,10 @@ import hashlib
 import json
 import math
 from collections import defaultdict
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Literal, Sequence
+from typing import Any, Literal
 
 import numpy as np
 
@@ -18,7 +19,6 @@ from rlflow_api.services.dataset_analysis import (
     _train_rnd,
     decode_grid_positions,
 )
-
 
 Algorithm = Literal["rnd", "cfn", "count_oracle", "count_vanilla"]
 
@@ -257,10 +257,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--algorithms",
         default="rnd,cfn,count_oracle,count_vanilla",
-        help=(
-            "Comma-separated algorithms to run. Choices: rnd, cfn, "
-            "count_oracle, count_vanilla."
-        ),
+        help=("Comma-separated algorithms to run. Choices: rnd, cfn, count_oracle, count_vanilla."),
     )
     parser.add_argument("--seeds", default="0", help="Comma-separated learned-method seeds.")
     parser.add_argument("--epochs", type=int, default=500)
@@ -323,8 +320,7 @@ def _parse_args() -> argparse.Namespace:
         "--epoch-sweep",
         default="",
         help=(
-            "Comma-separated epoch counts for metrics-vs-epochs plots. "
-            "Example: 1,2,5,10,20,50,100."
+            "Comma-separated epoch counts for metrics-vs-epochs plots. Example: 1,2,5,10,20,50,100."
         ),
     )
     parser.add_argument(
@@ -378,15 +374,9 @@ def _parse_args() -> argparse.Namespace:
         parser.error("--intrinsic-stats-decay must be in [0, 1]")
     if args.intrinsic_reward_scale < 0:
         parser.error("--intrinsic-reward-scale must be non-negative")
-    if (
-        args.rnd_intrinsic_reward_scale is not None
-        and args.rnd_intrinsic_reward_scale < 0
-    ):
+    if args.rnd_intrinsic_reward_scale is not None and args.rnd_intrinsic_reward_scale < 0:
         parser.error("--rnd-intrinsic-reward-scale must be non-negative")
-    if (
-        args.cfn_intrinsic_reward_scale is not None
-        and args.cfn_intrinsic_reward_scale < 0
-    ):
+    if args.cfn_intrinsic_reward_scale is not None and args.cfn_intrinsic_reward_scale < 0:
         parser.error("--cfn-intrinsic-reward-scale must be non-negative")
     if args.intrinsic_reward_epsilon <= 0:
         parser.error("--intrinsic-reward-epsilon must be positive")
@@ -490,16 +480,18 @@ def _build_probe_set(
 
     if decoding is not None:
         all_positions = decoding.positions.astype(np.int32)
-        oracle_state_counts = _count_by_key((tuple(pos) for pos in all_positions))
+        oracle_state_counts = _count_by_key(tuple(pos) for pos in all_positions)
         oracle_state_action_counts = _count_by_key(
-            (tuple((int(pos[0]), int(pos[1]), int(action))) for pos, action in zip(all_positions, actions, strict=True))
+            (
+                tuple((int(pos[0]), int(pos[1]), int(action)))
+                for pos, action in zip(all_positions, actions, strict=True)
+            )
         )
     else:
         oracle_state_counts = {}
         oracle_state_action_counts = {}
 
     raw_obs_keys = [_observation_key(row) for row in train_observations]
-    raw_obs_counts = _count_by_key(raw_obs_keys)
     raw_state_action_counts = _count_by_key(
         ((key, int(action)) for key, action in zip(raw_obs_keys, actions, strict=True))
     )

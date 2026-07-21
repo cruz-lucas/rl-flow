@@ -4,7 +4,7 @@ import hashlib
 import platform as platform_module
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
 from typing import Any, Literal
@@ -41,7 +41,7 @@ class RunManifest(BaseModel):
 
 
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def file_sha256(path: str | Path) -> str:

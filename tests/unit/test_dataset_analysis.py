@@ -85,7 +85,9 @@ def test_offline_simhash_analysis_returns_state_action_bonus() -> None:
     assert analysis.count_state_action_bonus is not None
 
 
-def _symbolic_navix_observation(row: int, col: int, *, size: int = 5, wall_colour: int) -> np.ndarray:
+def _symbolic_navix_observation(
+    row: int, col: int, *, size: int = 5, wall_colour: int
+) -> np.ndarray:
     raw = np.zeros((size, size, 3), dtype=np.float32)
     raw[..., 0] = 1
     raw[0, :, :] = np.asarray([2, wall_colour, 0], dtype=np.float32)

@@ -83,7 +83,7 @@ class JsonlLogger:
     def close(self) -> None:
         self._handle.close()
 
-    def __enter__(self) -> "JsonlLogger":
+    def __enter__(self) -> JsonlLogger:
         return self
 
     def __exit__(self, *args: object) -> None:

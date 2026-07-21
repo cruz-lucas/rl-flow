@@ -137,10 +137,10 @@ def _write_sweep(sweep_dir: Path) -> Path:
             "\n".join(
                 [
                     (
-                        '{"episode": %d, "env_step": %d, "return": %.1f, '
-                        '"discounted_return": %.1f, "length": 1, "loss": 0.0}'
+                        f'{{"episode": {episode}, "env_step": {episode + 1}, '
+                        f'"return": {value:.1f}, "discounted_return": {value:.1f}, '
+                        '"length": 1, "loss": 0.0}'
                     )
-                    % (episode, episode + 1, value, value)
                     for episode, value in enumerate(returns)
                 ]
             ),

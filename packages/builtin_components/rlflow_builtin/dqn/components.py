@@ -291,10 +291,16 @@ def _common_intrinsic_properties(prefix: str) -> dict:
                 ]
             }
         ),
-        f"{prefix}_activation": {"type": ["string", "null"], "enum": ["relu", "tanh", "gelu", "elu", "linear", None]},
+        f"{prefix}_activation": {
+            "type": ["string", "null"],
+            "enum": ["relu", "tanh", "gelu", "elu", "linear", None],
+        },
         f"{prefix}_normalization": _hidden_property({"type": ["string", "null"]}),
         f"{prefix}_learning_rate": {"type": ["number", "null"], "exclusiveMinimum": 0.0},
-        f"{prefix}_optimizer": {"type": ["string", "null"], "enum": ["adam", "sgd", "rmsprop", None]},
+        f"{prefix}_optimizer": {
+            "type": ["string", "null"],
+            "enum": ["adam", "sgd", "rmsprop", None],
+        },
         "debug": {"type": "boolean"},
         "debug_log_dir": {"type": "string"},
         "debug_log_to_mlflow": {"type": "boolean"},

@@ -8,12 +8,16 @@ import yaml
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from rlflow.execution.local import LocalExecutor
-from rlflow.execution.slurm import SlurmExecutor
 from rlflow.graph.run_naming import make_run_id, slugify_run_name
 from rlflow.graph.sweep import SweepCompilationError, SweepCompiler
 from rlflow.schemas.job import JobInfo
-from rlflow.schemas.sweep import SweepCompilation, SweepMetric, SweepParameter, SweepSlurmSpec, SweepSpec
+from rlflow.schemas.sweep import (
+    SweepCompilation,
+    SweepMetric,
+    SweepParameter,
+    SweepSlurmSpec,
+    SweepSpec,
+)
 from rlflow.schemas.workflow import ExecutionSpec, WorkflowSpec
 
 router = APIRouter(prefix="/sweeps", tags=["sweeps"])
@@ -95,7 +99,9 @@ def list_sweeps(request: Request) -> list[SweepListItem]:
     sweeps: list[SweepListItem] = []
     for path in run_root.rglob("sweep_manifest.yaml"):
         try:
-            compilation = SweepCompilation.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+            compilation = SweepCompilation.model_validate(
+                yaml.safe_load(path.read_text(encoding="utf-8"))
+            )
         except Exception:
             continue
         sweeps.append(
@@ -115,7 +121,9 @@ def list_sweeps(request: Request) -> list[SweepListItem]:
 def inspect_sweep(payload: SweepInspectRequest, request: Request) -> dict[str, Any]:
     manifest_path = _resolve_sweep_manifest_path(payload.path, request)
     if not manifest_path.exists():
-        raise HTTPException(status_code=404, detail=f"Sweep manifest does not exist: {manifest_path}")
+        raise HTTPException(
+            status_code=404, detail=f"Sweep manifest does not exist: {manifest_path}"
+        )
     try:
         return SweepCompiler(request.app.state.registry).summarize(
             manifest_path,
@@ -155,7 +163,9 @@ def run_sweep(payload: SweepBuildRequest, request: Request) -> SweepRunResponse:
     backend = experiments[0].execution_backend if experiments else payload.execution_backend
     if backend == "slurm":
         if compilation.slurm_array_path is None:
-            raise HTTPException(status_code=422, detail="Sweep did not generate a SLURM array script")
+            raise HTTPException(
+                status_code=422, detail="Sweep did not generate a SLURM array script"
+            )
         job = request.app.state.slurm_executor.submit_array(compilation)
         request.app.state.storage.save_job(job)
         return SweepRunResponse(compilation=compilation, jobs=[job])
@@ -177,12 +187,7 @@ def _compile_payload(payload: SweepBuildRequest, request: Request):
     spec = _sweep_spec(payload, workflow)
     sweep_id = spec.sweep_id or make_run_id(spec.name)
     spec.sweep_id = sweep_id
-    sweep_dir = (
-        _absolute_run_root(request)
-        / "sweeps"
-        / slugify_run_name(spec.name)
-        / sweep_id
-    )
+    sweep_dir = _absolute_run_root(request) / "sweeps" / slugify_run_name(spec.name) / sweep_id
     try:
         compilation = SweepCompiler(request.app.state.registry).compile(spec, out_dir=sweep_dir)
     except (SweepCompilationError, ValueError) as exc:
@@ -214,7 +219,9 @@ def _sweep_spec(payload: SweepBuildRequest, workflow: WorkflowSpec) -> SweepSpec
         )
     if payload.seed_count > 0:
         if not payload.seed_target:
-            raise HTTPException(status_code=422, detail="Select a seed target or set seed count to zero")
+            raise HTTPException(
+                status_code=422, detail="Select a seed target or set seed count to zero"
+            )
         parameters["seed"] = SweepParameter(
             target=payload.seed_target,
             values=list(range(payload.seed_start, payload.seed_start + payload.seed_count)),
@@ -235,7 +242,9 @@ def _sweep_spec(payload: SweepBuildRequest, workflow: WorkflowSpec) -> SweepSpec
         sweep_id=None,
         workflow=workflow,
         method=payload.method,
-        metric=SweepMetric(name=payload.metric_name, goal=payload.metric_goal, last_n=payload.metric_last_n),
+        metric=SweepMetric(
+            name=payload.metric_name, goal=payload.metric_goal, last_n=payload.metric_last_n
+        ),
         parameters=parameters,
         num_trials=payload.num_trials,
         seed=payload.random_seed,
@@ -261,7 +270,11 @@ def _workflow_candidates(workflow: WorkflowSpec, request: Request) -> list[Sweep
         component = request.app.state.registry.get(node.component)
         properties = component.config_schema.get("properties", {})
         for field, schema in properties.items():
-            if not isinstance(schema, dict) or schema.get("x-inspector-hidden") or schema.get("deprecated"):
+            if (
+                not isinstance(schema, dict)
+                or schema.get("x-inspector-hidden")
+                or schema.get("deprecated")
+            ):
                 continue
             value_type = _candidate_type(schema)
             if value_type is None:
@@ -299,7 +312,9 @@ def _candidate_type(schema: dict[str, Any]) -> str | None:
     return None
 
 
-def _recommended_values(field: str, value: Any, schema: dict[str, Any], value_type: str) -> list[Any]:
+def _recommended_values(
+    field: str, value: Any, schema: dict[str, Any], value_type: str
+) -> list[Any]:
     if field == "seed" or field.endswith("_seed"):
         return [0, 1, 2]
     if value_type == "boolean":

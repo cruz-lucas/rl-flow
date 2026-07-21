@@ -16,8 +16,8 @@ from rlflow_builtin.dqn.training import (
     DqnReplayConfig,
     DqnTrainState,
     _clone_params,
-    _count_keys,
     _count_direct_bonus,
+    _count_keys,
     _count_raw_bonus,
     _init_mlp,
     _initial_intrinsic_state,
@@ -39,10 +39,14 @@ from rlflow_builtin.tabular.types import RunnerConfig
 
 def test_builtin_tabular_q_learning_riverswim_runs(tmp_path: Path) -> None:
     workflow = WorkflowSpec.model_validate(
-        yaml.safe_load(Path("configs/workflows/tabular_q_learning_riverswim.yaml").read_text(encoding="utf-8"))
+        yaml.safe_load(
+            Path("configs/workflows/tabular_q_learning_riverswim.yaml").read_text(encoding="utf-8")
+        )
     )
 
-    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(
+        workflow, out_dir=tmp_path
+    )
 
     command = (tmp_path / "command.sh").read_text(encoding="utf-8")
     assert "rlflow_builtin.runners.tabular_jax" in command
@@ -60,7 +64,9 @@ def test_builtin_tabular_q_learning_riverswim_runs(tmp_path: Path) -> None:
 
 
 def test_builtin_tabular_q_learning_accepts_optional_replay_buffer(tmp_path: Path) -> None:
-    workflow_data = yaml.safe_load(Path("configs/workflows/tabular_q_learning_riverswim.yaml").read_text(encoding="utf-8"))
+    workflow_data = yaml.safe_load(
+        Path("configs/workflows/tabular_q_learning_riverswim.yaml").read_text(encoding="utf-8")
+    )
     workflow_data["name"] = "tabular_q_learning_riverswim_replay"
     for node in workflow_data["nodes"]:
         if node["id"] == "runner":
@@ -90,7 +96,9 @@ def test_builtin_tabular_q_learning_accepts_optional_replay_buffer(tmp_path: Pat
     )
     workflow = WorkflowSpec.model_validate(workflow_data)
 
-    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(
+        workflow, out_dir=tmp_path
+    )
 
     subprocess.run(["bash", experiment.command], check=True)
 
@@ -101,10 +109,14 @@ def test_builtin_tabular_q_learning_accepts_optional_replay_buffer(tmp_path: Pat
 
 def test_builtin_tabular_sarsa_gridworld_runs(tmp_path: Path) -> None:
     workflow = WorkflowSpec.model_validate(
-        yaml.safe_load(Path("configs/workflows/tabular_sarsa_gridworld.yaml").read_text(encoding="utf-8"))
+        yaml.safe_load(
+            Path("configs/workflows/tabular_sarsa_gridworld.yaml").read_text(encoding="utf-8")
+        )
     )
 
-    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(
+        workflow, out_dir=tmp_path
+    )
 
     subprocess.run(["bash", experiment.command], check=True)
 
@@ -118,10 +130,14 @@ def test_builtin_tabular_sarsa_gridworld_runs(tmp_path: Path) -> None:
 
 def test_builtin_tabular_q_learning_sixarms_runs(tmp_path: Path) -> None:
     workflow = WorkflowSpec.model_validate(
-        yaml.safe_load(Path("configs/workflows/tabular_q_learning_sixarms.yaml").read_text(encoding="utf-8"))
+        yaml.safe_load(
+            Path("configs/workflows/tabular_q_learning_sixarms.yaml").read_text(encoding="utf-8")
+        )
     )
 
-    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(
+        workflow, out_dir=tmp_path
+    )
 
     subprocess.run(["bash", experiment.command], check=True)
 
@@ -178,14 +194,31 @@ def test_builtin_tabular_q_learning_navix_empty_room_runs(tmp_path: Path) -> Non
                 },
             ],
             "edges": [
-                {"from_node": "env", "from_port": "environment", "to_node": "runner", "to_port": "environment"},
-                {"from_node": "agent", "from_port": "agent", "to_node": "runner", "to_port": "agent"},
-                {"from_node": "policy", "from_port": "policy", "to_node": "runner", "to_port": "policy"},
+                {
+                    "from_node": "env",
+                    "from_port": "environment",
+                    "to_node": "runner",
+                    "to_port": "environment",
+                },
+                {
+                    "from_node": "agent",
+                    "from_port": "agent",
+                    "to_node": "runner",
+                    "to_port": "agent",
+                },
+                {
+                    "from_node": "policy",
+                    "from_port": "policy",
+                    "to_node": "runner",
+                    "to_port": "policy",
+                },
             ],
         }
     )
 
-    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(
+        workflow, out_dir=tmp_path
+    )
 
     subprocess.run(["bash", experiment.command], check=True)
 
@@ -241,13 +274,25 @@ def test_builtin_tabular_rmax_navix_empty_room_runs_without_policy(tmp_path: Pat
                 },
             ],
             "edges": [
-                {"from_node": "env", "from_port": "environment", "to_node": "runner", "to_port": "environment"},
-                {"from_node": "agent", "from_port": "agent", "to_node": "runner", "to_port": "agent"},
+                {
+                    "from_node": "env",
+                    "from_port": "environment",
+                    "to_node": "runner",
+                    "to_port": "environment",
+                },
+                {
+                    "from_node": "agent",
+                    "from_port": "agent",
+                    "to_node": "runner",
+                    "to_port": "agent",
+                },
             ],
         }
     )
 
-    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(
+        workflow, out_dir=tmp_path
+    )
 
     subprocess.run(["bash", experiment.command], check=True)
 
@@ -307,13 +352,25 @@ def test_builtin_tabular_rmax_navix_truncation_bootstraps(tmp_path: Path) -> Non
                 },
             ],
             "edges": [
-                {"from_node": "env", "from_port": "environment", "to_node": "runner", "to_port": "environment"},
-                {"from_node": "agent", "from_port": "agent", "to_node": "runner", "to_port": "agent"},
+                {
+                    "from_node": "env",
+                    "from_port": "environment",
+                    "to_node": "runner",
+                    "to_port": "environment",
+                },
+                {
+                    "from_node": "agent",
+                    "from_port": "agent",
+                    "to_node": "runner",
+                    "to_port": "agent",
+                },
             ],
         }
     )
 
-    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(
+        workflow, out_dir=tmp_path
+    )
 
     subprocess.run(["bash", experiment.command], check=True)
 
@@ -370,14 +427,31 @@ def test_builtin_tabular_q_learning_navix_four_rooms_runs(tmp_path: Path) -> Non
                 },
             ],
             "edges": [
-                {"from_node": "env", "from_port": "environment", "to_node": "runner", "to_port": "environment"},
-                {"from_node": "agent", "from_port": "agent", "to_node": "runner", "to_port": "agent"},
-                {"from_node": "policy", "from_port": "policy", "to_node": "runner", "to_port": "policy"},
+                {
+                    "from_node": "env",
+                    "from_port": "environment",
+                    "to_node": "runner",
+                    "to_port": "environment",
+                },
+                {
+                    "from_node": "agent",
+                    "from_port": "agent",
+                    "to_node": "runner",
+                    "to_port": "agent",
+                },
+                {
+                    "from_node": "policy",
+                    "from_port": "policy",
+                    "to_node": "runner",
+                    "to_port": "policy",
+                },
             ],
         }
     )
 
-    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(
+        workflow, out_dir=tmp_path
+    )
 
     subprocess.run(["bash", experiment.command], check=True)
 
@@ -388,7 +462,9 @@ def test_builtin_tabular_q_learning_navix_four_rooms_runs(tmp_path: Path) -> Non
     assert metrics["mean_eval_return"] is not None
 
 
-def test_builtin_tabular_replay_dataset_can_be_saved_and_loaded_for_offline_rl(tmp_path: Path) -> None:
+def test_builtin_tabular_replay_dataset_can_be_saved_and_loaded_for_offline_rl(
+    tmp_path: Path,
+) -> None:
     collector = _riverswim_dataset_workflow(
         name="collect_riverswim_dataset",
         replay_config={
@@ -403,14 +479,22 @@ def test_builtin_tabular_replay_dataset_can_be_saved_and_loaded_for_offline_rl(t
         },
     )
     collect_dir = tmp_path / "collect"
-    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(collector, out_dir=collect_dir)
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(
+        collector, out_dir=collect_dir
+    )
 
     subprocess.run(["bash", experiment.command], check=True)
 
     dataset_path = collect_dir / "datasets" / "replay.npz"
     assert dataset_path.exists()
     dataset = np.load(dataset_path)
-    assert set(dataset.files) == {"observations", "actions", "rewards", "next_observations", "terminals"}
+    assert set(dataset.files) == {
+        "observations",
+        "actions",
+        "rewards",
+        "next_observations",
+        "terminals",
+    }
     assert dataset["observations"].shape == (10,)
 
     offline = _riverswim_dataset_workflow(
@@ -427,7 +511,9 @@ def test_builtin_tabular_replay_dataset_can_be_saved_and_loaded_for_offline_rl(t
         },
     )
     offline_dir = tmp_path / "offline"
-    offline_experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(offline, out_dir=offline_dir)
+    offline_experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(
+        offline, out_dir=offline_dir
+    )
 
     subprocess.run(["bash", offline_experiment.command], check=True)
 
@@ -437,7 +523,9 @@ def test_builtin_tabular_replay_dataset_can_be_saved_and_loaded_for_offline_rl(t
     assert np.load(offline_dir / "q_table.npy").shape == (6, 2)
 
 
-def test_builtin_jax_runner_uses_builtin_dqn_for_non_tabular_navix_observations(tmp_path: Path) -> None:
+def test_builtin_jax_runner_uses_builtin_dqn_for_non_tabular_navix_observations(
+    tmp_path: Path,
+) -> None:
     workflow = _dqn_navix_workflow(
         observation_mode="symbolic",
         agent_config={
@@ -454,7 +542,9 @@ def test_builtin_jax_runner_uses_builtin_dqn_for_non_tabular_navix_observations(
         },
     )
 
-    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(
+        workflow, out_dir=tmp_path
+    )
 
     subprocess.run(["bash", experiment.command], check=True)
 
@@ -484,7 +574,9 @@ def test_builtin_jax_runner_uses_builtin_dqn_for_tabular_navix_observations(tmp_
         },
     )
 
-    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(
+        workflow, out_dir=tmp_path
+    )
 
     subprocess.run(["bash", experiment.command], check=True)
 
@@ -517,7 +609,9 @@ def test_builtin_dqn_replay_dataset_save_path_appends_npz(tmp_path: Path) -> Non
         if node.id == "replay":
             node.config["save_dataset_path"] = "datasets/replay"
 
-    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(
+        workflow, out_dir=tmp_path
+    )
 
     subprocess.run(["bash", experiment.command], check=True)
 
@@ -673,7 +767,9 @@ def test_builtin_jax_runner_uses_dqn_rmax_with_count_bonus(tmp_path: Path) -> No
         )
     )
 
-    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(workflow, out_dir=tmp_path)
+    experiment = WorkflowCompiler(create_default_registry(discover=False)).compile(
+        workflow, out_dir=tmp_path
+    )
 
     subprocess.run(["bash", experiment.command], check=True)
 
@@ -1347,10 +1443,30 @@ def _riverswim_dataset_workflow(name: str, replay_config: dict) -> WorkflowSpec:
                 },
             ],
             "edges": [
-                {"from_node": "env", "from_port": "environment", "to_node": "runner", "to_port": "environment"},
-                {"from_node": "agent", "from_port": "agent", "to_node": "runner", "to_port": "agent"},
-                {"from_node": "policy", "from_port": "policy", "to_node": "runner", "to_port": "policy"},
-                {"from_node": "replay", "from_port": "replay_buffer", "to_node": "runner", "to_port": "replay_buffer"},
+                {
+                    "from_node": "env",
+                    "from_port": "environment",
+                    "to_node": "runner",
+                    "to_port": "environment",
+                },
+                {
+                    "from_node": "agent",
+                    "from_port": "agent",
+                    "to_node": "runner",
+                    "to_port": "agent",
+                },
+                {
+                    "from_node": "policy",
+                    "from_port": "policy",
+                    "to_node": "runner",
+                    "to_port": "policy",
+                },
+                {
+                    "from_node": "replay",
+                    "from_port": "replay_buffer",
+                    "to_node": "runner",
+                    "to_port": "replay_buffer",
+                },
             ],
         }
     )
@@ -1391,7 +1507,9 @@ def _minimal_dqn_agent(algorithm: str = "dqn") -> DqnAgentConfig:
     )
 
 
-def _symbolic_navix_observation(row: int, col: int, *, size: int = 5, wall_colour: int) -> np.ndarray:
+def _symbolic_navix_observation(
+    row: int, col: int, *, size: int = 5, wall_colour: int
+) -> np.ndarray:
     raw = np.zeros((size, size, 3), dtype=np.float32)
     raw[..., 0] = 1
     raw[0, :, :] = np.asarray([2, wall_colour, 0], dtype=np.float32)
@@ -1457,9 +1575,24 @@ def _dqn_navix_workflow(
                 },
             ],
             "edges": [
-                {"from_node": "env", "from_port": "environment", "to_node": "runner", "to_port": "environment"},
-                {"from_node": "agent", "from_port": "agent", "to_node": "runner", "to_port": "agent"},
-                {"from_node": "replay", "from_port": "replay_buffer", "to_node": "runner", "to_port": "replay_buffer"},
+                {
+                    "from_node": "env",
+                    "from_port": "environment",
+                    "to_node": "runner",
+                    "to_port": "environment",
+                },
+                {
+                    "from_node": "agent",
+                    "from_port": "agent",
+                    "to_node": "runner",
+                    "to_port": "agent",
+                },
+                {
+                    "from_node": "replay",
+                    "from_port": "replay_buffer",
+                    "to_node": "runner",
+                    "to_port": "replay_buffer",
+                },
             ],
         }
     )

@@ -103,7 +103,9 @@ class LocalExecutor(ExecutionBackend):
                     exit_code=code,
                     message=f"process terminated by signal {-code}",
                 )
-                return JobStatus(state=JobState.cancelled, message=f"process terminated by signal {-code}")
+                return JobStatus(
+                    state=JobState.cancelled, message=f"process terminated by signal {-code}"
+                )
             update_status(
                 run_dir,
                 RunStatusState.failed,
@@ -144,7 +146,9 @@ class LocalExecutor(ExecutionBackend):
         chunks = []
         for label, path in (("stdout", job.stdout_path), ("stderr", job.stderr_path)):
             if path and Path(path).exists():
-                chunks.append(f"== {label} ==\n{Path(path).read_text(encoding='utf-8', errors='replace')}")
+                chunks.append(
+                    f"== {label} ==\n{Path(path).read_text(encoding='utf-8', errors='replace')}"
+                )
         return "\n".join(chunks)
 
     def _job_status_from_run_status(self, status: RunStatus) -> JobStatus | None:
@@ -159,11 +163,12 @@ class LocalExecutor(ExecutionBackend):
         if status.status == RunStatusState.queued:
             return JobStatus(state=JobState.pending, message=status.message or "run is queued")
         if status.status == RunStatusState.unknown:
-            return JobStatus(state=JobState.unknown, message=status.message or "run status is unknown")
+            return JobStatus(
+                state=JobState.unknown, message=status.message or "run status is unknown"
+            )
         return None
 
     def _metrics_exist(self, run_dir: Path) -> bool:
-        return (
-            (run_dir / "summaries" / "metrics.json").exists()
-            or (run_dir / "metrics.json").exists()
-        )
+        return (run_dir / "summaries" / "metrics.json").exists() or (
+            run_dir / "metrics.json"
+        ).exists()

@@ -6,7 +6,6 @@ from typing import Literal, NamedTuple
 import jax
 import numpy as np
 
-
 AlgorithmName = Literal["q_learning", "sarsa", "rmax"]
 PolicyName = Literal["epsilon_greedy", "ucb", "softmax"]
 EnvironmentName = Literal["gridworld", "riverswim", "sixarms", "navix"]

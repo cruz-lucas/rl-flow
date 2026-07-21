@@ -5,7 +5,6 @@ from typing import Literal
 
 import numpy as np
 
-
 ACTION_LABELS = ("Up", "Down", "Left", "Right")
 
 
@@ -239,9 +238,7 @@ def offline_rnd_analysis(
     else:
         raise ValueError(f"Unsupported offline RL algorithm: {algorithm}")
     if granularity == "state" and not _is_no_action_conditioning(action_conditioning):
-        learned_bonus = learned_bonus.reshape(unique_indices.shape[0], action_count).mean(
-            axis=1
-        )
+        learned_bonus = learned_bonus.reshape(unique_indices.shape[0], action_count).mean(axis=1)
     visitation = transition_visitation(observations, actions)
     decoding = decode_grid_positions(observations)
     reference_counts = _oracle_reference_counts(
@@ -793,13 +790,15 @@ def _train_cfn(
 
     @jax.jit
     def evaluate(state, observations, actions):
-        raw_bonus, _intrinsic_input, _prior_features, _predictor_features, _coin_flips = _cfn_outputs(
-            state.prior_params,
-            state.predictor_params,
-            observations,
-            actions,
-            intrinsic,
-            num_actions,
+        raw_bonus, _intrinsic_input, _prior_features, _predictor_features, _coin_flips = (
+            _cfn_outputs(
+                state.prior_params,
+                state.predictor_params,
+                observations,
+                actions,
+                intrinsic,
+                num_actions,
+            )
         )
         normalized_bonus = _normalize_intrinsic_reward(
             intrinsic,
@@ -857,9 +856,7 @@ def _train_known_unknown_classifier(
         axis=0,
     ).astype(np.float32)
     # classifier_actions = train_actions
-    classifier_actions = np.concatenate((train_actions, negative_actions), axis=0).astype(
-        np.int32
-    )
+    classifier_actions = np.concatenate((train_actions, negative_actions), axis=0).astype(np.int32)
     # labels = np.ones((train_observations.shape[0],), dtype=np.float32)
     labels = np.concatenate(
         (
@@ -931,7 +928,9 @@ def _train_known_unknown_classifier(
             epoch_losses.append(float(loss))
         loss_history.append(float(np.mean(epoch_losses)) if epoch_losses else 0.0)
 
-    learned_bonus = np.asarray(jax.nn.sigmoid(logits(params, eval_observations_array, eval_actions_array)))
+    learned_bonus = np.asarray(
+        jax.nn.sigmoid(logits(params, eval_observations_array, eval_actions_array))
+    )
     return learned_bonus.astype(np.float32), loss_history
 
 

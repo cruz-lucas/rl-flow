@@ -1,6 +1,6 @@
+from rlflow.graph.validation import WorkflowValidator
 from rlflow.registry.builtin import create_default_registry
 from rlflow.schemas.workflow import ExecutionSpec, WorkflowEdge, WorkflowNode, WorkflowSpec
-from rlflow.graph.validation import WorkflowValidator
 
 
 def valid_workflow() -> WorkflowSpec:
@@ -14,9 +14,16 @@ def valid_workflow() -> WorkflowSpec:
             WorkflowNode(id="runner", component="builtin.runner.tabular_jax"),
         ],
         edges=[
-            WorkflowEdge(from_node="env", from_port="environment", to_node="runner", to_port="environment"),
+            WorkflowEdge(
+                from_node="env", from_port="environment", to_node="runner", to_port="environment"
+            ),
             WorkflowEdge(from_node="agent", from_port="agent", to_node="runner", to_port="agent"),
-            WorkflowEdge(from_node="replay", from_port="replay_buffer", to_node="runner", to_port="replay_buffer"),
+            WorkflowEdge(
+                from_node="replay",
+                from_port="replay_buffer",
+                to_node="runner",
+                to_port="replay_buffer",
+            ),
         ],
     )
 
@@ -96,9 +103,7 @@ def test_validation_requires_knownness_for_dqn_rmax() -> None:
 def test_validation_accepts_agent_knownness_for_dqn_rmax() -> None:
     workflow = valid_workflow()
     workflow.nodes[1].component = "builtin.agent.dqn_rmax_jax"
-    workflow.nodes.append(
-        WorkflowNode(id="intrinsic", component="builtin.intrinsic.count")
-    )
+    workflow.nodes.append(WorkflowNode(id="intrinsic", component="builtin.intrinsic.count"))
     workflow.edges.append(
         WorkflowEdge(
             from_node="intrinsic",
@@ -116,9 +121,7 @@ def test_validation_accepts_agent_knownness_for_dqn_rmax() -> None:
 def test_validation_accepts_legacy_runner_intrinsic_for_dqn_rmax() -> None:
     workflow = valid_workflow()
     workflow.nodes[1].component = "builtin.agent.dqn_rmax_jax"
-    workflow.nodes.append(
-        WorkflowNode(id="intrinsic", component="builtin.intrinsic.count")
-    )
+    workflow.nodes.append(WorkflowNode(id="intrinsic", component="builtin.intrinsic.count"))
     workflow.edges.append(
         WorkflowEdge(
             from_node="intrinsic",

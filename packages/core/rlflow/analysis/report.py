@@ -14,11 +14,7 @@ def format_sweep_report(
 ) -> str:
     groups = list(summary.get("groups") or [])
     trials = list(summary.get("trials") or [])
-    completed = [
-        trial
-        for trial in trials
-        if isinstance(trial.get("metric"), (int, float))
-    ]
+    completed = [trial for trial in trials if isinstance(trial.get("metric"), (int, float))]
     missing_count = len(trials) - len(completed)
     metric_last_n = summary.get("metric_last_n")
 
@@ -153,9 +149,7 @@ def _render_table(
 ) -> str:
     right_aligned = right_aligned or set()
     widths = [
-        max(len(header), *(len(row[index]) for row in rows))
-        if rows
-        else len(header)
+        max(len(header), *(len(row[index]) for row in rows)) if rows else len(header)
         for index, header in enumerate(headers)
     ]
 
@@ -201,8 +195,14 @@ def _write_groups_csv(path: Path, groups: list[dict[str, Any]]) -> None:
                     "metric_min": group.get("metric_min"),
                     "metric_max": group.get("metric_max"),
                     "metric_count": group.get("metric_count"),
-                    "parameters": json.dumps(group.get("parameters") or {}, sort_keys=True, default=str),
-                    "trial_ids": json.dumps(group.get("trial_ids") or [], sort_keys=True, default=str),
-                    "run_dirs": json.dumps(group.get("run_dirs") or [], sort_keys=True, default=str),
+                    "parameters": json.dumps(
+                        group.get("parameters") or {}, sort_keys=True, default=str
+                    ),
+                    "trial_ids": json.dumps(
+                        group.get("trial_ids") or [], sort_keys=True, default=str
+                    ),
+                    "run_dirs": json.dumps(
+                        group.get("run_dirs") or [], sort_keys=True, default=str
+                    ),
                 }
             )

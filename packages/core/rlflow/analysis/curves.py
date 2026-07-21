@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -233,10 +234,7 @@ def smooth_curve_columns(curves: pd.DataFrame, *, window: int | None) -> pd.Data
 def default_curve_label(parameters: Mapping[str, Any]) -> str:
     if not parameters:
         return "{}"
-    return ", ".join(
-        f"{str(key).split('.')[-1]}={value}"
-        for key, value in parameters.items()
-    )
+    return ", ".join(f"{str(key).split('.')[-1]}={value}" for key, value in parameters.items())
 
 
 def resolve_curve_label(
@@ -270,11 +268,7 @@ def _group_id_map(df: pd.DataFrame) -> dict[str, str]:
     mapping: dict[str, str] = {}
 
     for group_key, group in df.groupby("group_key", sort=True):
-        existing = [
-            str(value)
-            for value in group["group_id"]
-            if not _is_missing(value)
-        ]
+        existing = [str(value) for value in group["group_id"] if not _is_missing(value)]
         if existing:
             mapping[group_key] = existing[0]
             used.add(existing[0])

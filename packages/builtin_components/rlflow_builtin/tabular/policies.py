@@ -50,7 +50,9 @@ def select_action(
     return greedy(q_values, key, num_actions)
 
 
-def epsilon_greedy(q_values: jax.Array, key: jax.Array, epsilon: float, num_actions: int) -> jax.Array:
+def epsilon_greedy(
+    q_values: jax.Array, key: jax.Array, epsilon: float, num_actions: int
+) -> jax.Array:
     greedy_key, random_key, choice_key = jax.random.split(key, 3)
     random_action = jax.random.randint(random_key, (), 0, num_actions, dtype=jnp.int32)
     greedy_action = greedy(q_values, greedy_key, num_actions)
@@ -58,7 +60,9 @@ def epsilon_greedy(q_values: jax.Array, key: jax.Array, epsilon: float, num_acti
     return jnp.where(explore, random_action, greedy_action).astype(jnp.int32)
 
 
-def ucb(q_values: jax.Array, counts: jax.Array, coefficient: float, initial_count: float) -> jax.Array:
+def ucb(
+    q_values: jax.Array, counts: jax.Array, coefficient: float, initial_count: float
+) -> jax.Array:
     total_count = jnp.sum(counts)
     bonus = coefficient * jnp.sqrt(jnp.log(total_count + 1.0) / (counts + initial_count))
     return jnp.argmax(q_values + bonus).astype(jnp.int32)

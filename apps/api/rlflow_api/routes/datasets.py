@@ -135,7 +135,9 @@ def inspect_dataset(payload: DatasetInspectRequest, request: Request) -> Dataset
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"Dataset does not exist: {path}")
     if path.suffix != ".npz":
-        raise HTTPException(status_code=422, detail="Only compressed .npz datasets are currently supported")
+        raise HTTPException(
+            status_code=422, detail="Only compressed .npz datasets are currently supported"
+        )
 
     try:
         data = np.load(path, allow_pickle=False)
@@ -149,7 +151,9 @@ def inspect_dataset(payload: DatasetInspectRequest, request: Request) -> Dataset
     if is_transition_dataset:
         lengths = {len(np.asarray(data[name])) for name in TRANSITION_ARRAYS}
         if len(lengths) != 1:
-            raise HTTPException(status_code=422, detail="Transition dataset arrays have inconsistent lengths")
+            raise HTTPException(
+                status_code=422, detail="Transition dataset arrays have inconsistent lengths"
+            )
         num_transitions = lengths.pop()
         limit = min(payload.preview_rows, num_transitions)
         for idx in range(limit):
@@ -188,7 +192,9 @@ def train_offline_rnd(payload: OfflineRndRequest, request: Request) -> OfflineRn
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"Dataset does not exist: {path}")
     if path.suffix != ".npz":
-        raise HTTPException(status_code=422, detail="Only compressed .npz datasets are currently supported")
+        raise HTTPException(
+            status_code=422, detail="Only compressed .npz datasets are currently supported"
+        )
     try:
         data = np.load(path, allow_pickle=False)
     except Exception as exc:

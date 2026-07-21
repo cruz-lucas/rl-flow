@@ -22,8 +22,12 @@ class SlurmExecutor(ExecutionBackend):
         self._jobs: dict[str, JobInfo] = {}
 
     @staticmethod
-    def render_script(experiment: ExperimentSpec, options: dict[str, Any] | SlurmOptions | None = None) -> str:
-        slurm_options = options if isinstance(options, SlurmOptions) else SlurmOptions(**(options or {}))
+    def render_script(
+        experiment: ExperimentSpec, options: dict[str, Any] | SlurmOptions | None = None
+    ) -> str:
+        slurm_options = (
+            options if isinstance(options, SlurmOptions) else SlurmOptions(**(options or {}))
+        )
         template_dir = Path(__file__).parent / "templates"
         env = Environment(
             loader=FileSystemLoader(template_dir),
@@ -43,7 +47,9 @@ class SlurmExecutor(ExecutionBackend):
     ) -> str:
         if not sweep.trials:
             raise ValueError("Cannot render a SLURM array script for an empty sweep")
-        slurm_options = options if isinstance(options, SlurmOptions) else SlurmOptions(**(options or {}))
+        slurm_options = (
+            options if isinstance(options, SlurmOptions) else SlurmOptions(**(options or {}))
+        )
         resolved_trials_per_task = trials_per_task or sweep.slurm_trials_per_task
         if resolved_trials_per_task < 1:
             raise ValueError("trials_per_task must be at least 1")
@@ -82,7 +88,9 @@ class SlurmExecutor(ExecutionBackend):
             )
 
         if shutil.which("sbatch") is None:
-            raise RuntimeError("sbatch was not found on PATH; render succeeded but SLURM is unavailable")
+            raise RuntimeError(
+                "sbatch was not found on PATH; render succeeded but SLURM is unavailable"
+            )
 
         result = subprocess.run(
             ["sbatch", str(script_path)],
@@ -120,7 +128,9 @@ class SlurmExecutor(ExecutionBackend):
             raise RuntimeError(f"SLURM array script does not exist: {script_path}")
 
         if shutil.which("sbatch") is None:
-            raise RuntimeError("sbatch was not found on PATH; render succeeded but SLURM is unavailable")
+            raise RuntimeError(
+                "sbatch was not found on PATH; render succeeded but SLURM is unavailable"
+            )
 
         result = subprocess.run(
             ["sbatch", str(script_path)],
@@ -183,7 +193,9 @@ class SlurmExecutor(ExecutionBackend):
                 clean_state = state[0].strip().split()[0]
                 return JobStatus(state=self._map_state(clean_state), message=clean_state)
 
-        return JobStatus(state=JobState.unknown, message="SLURM status commands unavailable or job not found")
+        return JobStatus(
+            state=JobState.unknown, message="SLURM status commands unavailable or job not found"
+        )
 
     def cancel(self, job_id: str) -> None:
         external_id = self._external_id_from_job_id(job_id)
@@ -201,7 +213,9 @@ class SlurmExecutor(ExecutionBackend):
         chunks = []
         for label, path in (("stdout", job.stdout_path), ("stderr", job.stderr_path)):
             if path and Path(path).exists():
-                chunks.append(f"== {label} ==\n{Path(path).read_text(encoding='utf-8', errors='replace')}")
+                chunks.append(
+                    f"== {label} ==\n{Path(path).read_text(encoding='utf-8', errors='replace')}"
+                )
         return "\n".join(chunks)
 
     def _external_id_from_job_id(self, job_id: str) -> str:

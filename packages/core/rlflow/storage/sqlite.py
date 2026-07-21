@@ -21,7 +21,7 @@ class Storage:
         self.engine = create_engine(url, connect_args={"check_same_thread": False})
 
     @classmethod
-    def from_path(cls, path: str | Path) -> "Storage":
+    def from_path(cls, path: str | Path) -> Storage:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         return cls(f"sqlite:///{path}")
@@ -29,7 +29,9 @@ class Storage:
     def init(self) -> None:
         SQLModel.metadata.create_all(self.engine)
 
-    def save_experiment(self, experiment: ExperimentSpec, status: str = "compiled") -> ExperimentRecord:
+    def save_experiment(
+        self, experiment: ExperimentSpec, status: str = "compiled"
+    ) -> ExperimentRecord:
         with Session(self.engine) as session:
             record = session.get(ExperimentRecord, experiment.experiment_id)
             if record is None:
@@ -59,7 +61,11 @@ class Storage:
 
     def list_experiments(self) -> list[ExperimentRecord]:
         with Session(self.engine) as session:
-            return list(session.exec(select(ExperimentRecord).order_by(ExperimentRecord.created_at.desc())).all())
+            return list(
+                session.exec(
+                    select(ExperimentRecord).order_by(ExperimentRecord.created_at.desc())
+                ).all()
+            )
 
     def get_experiment(self, experiment_id: str) -> ExperimentRecord | None:
         with Session(self.engine) as session:
@@ -76,7 +82,9 @@ class Storage:
             session.refresh(record)
             return record
 
-    def save_workflow(self, workflow: WorkflowSpec, workflow_id: str | None = None) -> WorkflowRecord:
+    def save_workflow(
+        self, workflow: WorkflowSpec, workflow_id: str | None = None
+    ) -> WorkflowRecord:
         workflow_id = workflow_id or _workflow_id_from_name(workflow.name)
         with Session(self.engine) as session:
             record = session.get(WorkflowRecord, workflow_id)
@@ -99,7 +107,11 @@ class Storage:
 
     def list_workflows(self) -> list[WorkflowRecord]:
         with Session(self.engine) as session:
-            return list(session.exec(select(WorkflowRecord).order_by(WorkflowRecord.updated_at.desc())).all())
+            return list(
+                session.exec(
+                    select(WorkflowRecord).order_by(WorkflowRecord.updated_at.desc())
+                ).all()
+            )
 
     def get_workflow(self, workflow_id: str) -> WorkflowRecord | None:
         with Session(self.engine) as session:

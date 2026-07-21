@@ -12,6 +12,7 @@ from rlflow_builtin.tabular.buffers import (
     save_replay_dataset,
 )
 from rlflow_builtin.tabular.checkpoint import save_checkpoint
+from rlflow_builtin.tabular.config import runner_config
 from rlflow_builtin.tabular.environments import (
     environment_config,
     gridworld_environment,
@@ -24,7 +25,14 @@ from rlflow_builtin.tabular.environments import (
     sixarms_environment,
     sixarms_step,
 )
-from rlflow_builtin.tabular.policies import epsilon_greedy, greedy, policy_config, select_action, softmax, ucb
+from rlflow_builtin.tabular.policies import (
+    epsilon_greedy,
+    greedy,
+    policy_config,
+    select_action,
+    softmax,
+    ucb,
+)
 from rlflow_builtin.tabular.training import run_tabular_training
 from rlflow_builtin.tabular.types import (
     AgentConfig,
@@ -40,7 +48,6 @@ from rlflow_builtin.tabular.types import (
     TabularRunResult,
     TransitionBatch,
 )
-from rlflow_builtin.tabular.config import runner_config
 
 __all__ = [
     "AgentConfig",

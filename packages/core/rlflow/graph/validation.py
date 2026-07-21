@@ -72,8 +72,9 @@ class WorkflowValidator:
                     )
 
         runners = [
-            node for node in workflow.nodes if node_components.get(node.id, None)
-            and node_components[node.id].kind == "runner"
+            node
+            for node in workflow.nodes
+            if node_components.get(node.id, None) and node_components[node.id].kind == "runner"
         ]
         if len(runners) != 1:
             errors.append(
@@ -207,11 +208,7 @@ class WorkflowValidator:
         node_components: dict[str, ComponentSpec],
     ) -> list[ValidationErrorDetail]:
         errors: list[ValidationErrorDetail] = []
-        inbound = {
-            edge.to_port: edge
-            for edge in workflow.edges
-            if edge.to_node == runner_id
-        }
+        inbound = {edge.to_port: edge for edge in workflow.edges if edge.to_node == runner_id}
         agent_edge = inbound.get("agent")
         if agent_edge is None:
             return errors

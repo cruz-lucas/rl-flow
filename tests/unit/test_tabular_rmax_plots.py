@@ -1,12 +1,14 @@
-from pathlib import Path
 import importlib.util
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 pytest.importorskip("matplotlib")
 
-SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "plot_tabular_rmax_emptyroom_maps.py"
+SCRIPT_PATH = (
+    Path(__file__).resolve().parents[2] / "scripts" / "plot_tabular_rmax_emptyroom_maps.py"
+)
 SPEC = importlib.util.spec_from_file_location("plot_tabular_rmax_emptyroom_maps", SCRIPT_PATH)
 assert SPEC is not None
 plot_module = importlib.util.module_from_spec(SPEC)
@@ -69,17 +71,20 @@ def test_plot_tabular_rmax_fourrooms_maps_writes_episode_png(tmp_path: Path) -> 
     np.save(tmp_path / "action_counts.npy", action_counts)
 
     out_dir = tmp_path / "plots"
-    assert plot_module.main(
-        [
-            str(tmp_path),
-            "--env-name",
-            "fourrooms",
-            "--episodes",
-            "7",
-            "--out-dir",
-            str(out_dir),
-        ]
-    ) == 0
+    assert (
+        plot_module.main(
+            [
+                str(tmp_path),
+                "--env-name",
+                "fourrooms",
+                "--episodes",
+                "7",
+                "--out-dir",
+                str(out_dir),
+            ]
+        )
+        == 0
+    )
 
     q_plot = out_dir / "state_action_q_values_episode_7.png"
     assert q_plot.exists()

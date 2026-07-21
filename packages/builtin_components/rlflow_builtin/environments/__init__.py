@@ -1,4 +1,5 @@
 """Built-in environment helpers."""
+
 from __future__ import annotations
 
 from rlflow.schemas.component import ComponentSpec, PortSpec
@@ -27,7 +28,10 @@ def environment_components() -> list[ComponentSpec]:
                         "enum": [5, 6, 8, 16, 19],
                         "description": "Grid side length. FourRooms requires 19.",
                     },
-                    "layout": {"type": "string", "enum": ["fixed", "random", "layout1", "layout2", "layout3"]},
+                    "layout": {
+                        "type": "string",
+                        "enum": ["fixed", "random", "layout1", "layout2", "layout3"],
+                    },
                     "observation_mode": {
                         "type": "string",
                         "enum": ["tabular", "one_hot", "state_features", "symbolic", "rgb"],
