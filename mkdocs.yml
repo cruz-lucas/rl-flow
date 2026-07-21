@@ -48,6 +48,7 @@ nav:
       - DQN + R-Max Count Oracle: tutorials/rmax-count-oracle.md
       - SLURM Sweeps: tutorials/slurm-sweep.md
       - Learning-Curve Analysis: tutorials/learning-curves.md
+      - Factorial Design Analysis: tutorials/factorial-design-analysis.md
   - Concepts:
       - Workflows: concepts/workflows.md
       - Components: concepts/components.md
