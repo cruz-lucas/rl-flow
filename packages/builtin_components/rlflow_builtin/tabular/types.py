@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, NamedTuple
 
 import jax
@@ -130,4 +130,10 @@ class TabularRunResult:
     train_losses: np.ndarray
     eval_returns: np.ndarray
     eval_lengths: np.ndarray
+    train_discounted_returns: np.ndarray = field(
+        default_factory=lambda: np.asarray([], dtype=np.float32)
+    )
+    eval_discounted_returns: np.ndarray = field(
+        default_factory=lambda: np.asarray([], dtype=np.float32)
+    )
     dataset: TabularDataset | None = None

@@ -206,11 +206,13 @@ def _write_tabular_outputs(
         result.train_returns,
         result.train_lengths,
         result.train_losses,
+        discounted_returns=_optional_discounted(result.train_discounted_returns, result.train_returns),
     )
     _write_eval_history(
         logs_dir / "eval_history.jsonl",
         result.eval_returns,
         result.eval_lengths,
+        discounted_returns=_optional_discounted(result.eval_discounted_returns, result.eval_returns),
     )
 
     dataset_path = None
@@ -255,8 +257,14 @@ def _write_tabular_outputs(
         "train_episodes": int(runner_settings["train_episodes"]),
         "train_steps": runner_settings.get("train_steps"),
         **_train_return_metrics(result.train_returns),
+        "mean_train_discounted_return": _mean_all(result.train_discounted_returns),
         "mean_eval_return": (
             float(np.mean(result.eval_returns)) if len(result.eval_returns) else None
+        ),
+        "mean_eval_discounted_return": (
+            float(np.mean(result.eval_discounted_returns))
+            if len(result.eval_discounted_returns)
+            else None
         ),
         "final_checkpoint": final_checkpoint,
         "saved_replay_dataset_path": dataset_path,
@@ -392,6 +400,23 @@ def workflow_node(workflow: WorkflowSpec, node_id: str):
         if node.id == node_id:
             return node
     raise ValueError(f"Workflow node not found: {node_id}")
+
+
+def _optional_discounted(
+    discounted: np.ndarray | None,
+    returns: np.ndarray,
+) -> np.ndarray | None:
+    """Return the discounted-return array only when it lines up with ``returns``.
+
+    Tabular results always populate discounted returns, but guarding here keeps
+    the writer safe if a result ever omits them (the field defaults to an empty
+    array) so we never emit a mismatched or partial ``discounted_return`` column.
+    """
+    if discounted is None:
+        return None
+    if len(discounted) != len(returns):
+        return None
+    return discounted
 
 
 def _write_episode_history(
