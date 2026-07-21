@@ -2455,7 +2455,9 @@ def _epsilon(
     end: float,
     decay_steps: int,
 ) -> jax.Array:
-    fraction = jnp.minimum(1.0, step.astype(jnp.float32) / float(decay_steps))
+    # Guard against decay_steps == 0, which would divide by zero (NaN at step 0).
+    decay = float(max(int(decay_steps), 1))
+    fraction = jnp.minimum(1.0, step.astype(jnp.float32) / decay)
     return start + fraction * (end - start)
 
 
