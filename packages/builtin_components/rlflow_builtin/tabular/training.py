@@ -91,9 +91,6 @@ def run_tabular_training(
         q, counts, buffer_state, scan_key = carry
         scan_key, episode_key, reset_key, first_action_key = jax.random.split(scan_key, 4)
         state = initial_state(environment, reset_key)
-        # Fix #4: carry the acting action across steps so on-policy SARSA can
-        # bootstrap with the action actually taken next (rather than an
-        # independently re-sampled one). The first action is chosen here.
         action = select_action(
             policy,
             q[state],
@@ -139,9 +136,6 @@ def run_tabular_training(
                     num_actions=environment.num_actions,
                     next_action=next_action,
                 )
-                # For Q-learning the executed successor action is selected from
-                # the just-updated table (unchanged behaviour); for SARSA it is
-                # the pre-update ``next_action`` already used in the bootstrap.
                 executed_next_action = (
                     next_action
                     if agent.algorithm == "sarsa"
@@ -770,9 +764,6 @@ def _run_offline_tabular_training(
             xs=None,
             length=updates_per_epoch,
         )[0]
-        # Offline updates operate on a fixed dataset with no environment
-        # interaction, so there is no episodic training return to report here.
-        # Performance is measured by the greedy evaluation rollouts below.
         return (q, counts, scan_key), (
             jnp.asarray(0.0, dtype=jnp.float32),
             jnp.asarray(0.0, dtype=jnp.float32),
@@ -792,10 +783,6 @@ def _run_offline_tabular_training(
     (q_final, action_counts_final, eval_key), train_history = run_train_scan(q_table, action_counts, key)
     train_returns, train_discounted_returns, train_lengths, train_losses = train_history
 
-    # Fix #2: offline training previously reported no performance signal at all.
-    # Run greedy evaluation rollouts in the environment to measure the learned
-    # policy. Navix environments are not steppable through make_step_fn, so eval
-    # is only available for the tabular (gridworld/riverswim/sixarms) envs.
     if runner.eval_episodes > 0 and environment.name != "navix":
         env_step = make_step_fn(environment)
 

@@ -45,16 +45,18 @@ def apply_td_update(
     key: jax.Array,
     *,
     num_actions: int,
+    next_action: jax.Array | None = None,
 ) -> tuple[jax.Array, jax.Array]:
     if agent.algorithm == "sarsa":
-        next_action = select_action(
-            policy,
-            q_table[next_state],
-            action_counts[next_state],
-            key,
-            training=True,
-            num_actions=num_actions,
-        )
+        if next_action is None:
+            next_action = select_action(
+                policy,
+                q_table[next_state],
+                action_counts[next_state],
+                key,
+                training=True,
+                num_actions=num_actions,
+            )
         bootstrap = q_table[next_state, next_action]
     else:
         bootstrap = jnp.max(q_table[next_state])
