@@ -20,15 +20,15 @@ execution:
   backend: slurm
   options:
     account: aip-machado
-    time: "08:00:00"
+    time: "03:00:00"
     cpus_per_task: 2
     mem: 8G
     modules:
       - python/3.11
       - cuda/13.2
 metadata:
-  experiment_id: factorial-design-experiments-experiment5-20260601-000000-000000000
-name: factorial_design_experiments__experiment5
+  experiment_id: 16x16-emptyroom-symbolic-cardinal-cornerdistractor--dqn-cfn-intrinsicreward-20260604-022550-d0c87613
+name: 16x16_emptyroom_symbolic_cardinal_cornerdistractor__dqn_cfn_intrinsicreward
 nodes:
 - component: builtin.agent.dqn_jax
   config:
@@ -116,8 +116,8 @@ nodes:
     cfn_bonus_exponent: 0.5
     cfn_final_tanh: false
     cfn_hidden_units:
-    - 128
-    - 128
+    - 512
+    - 512
     cfn_learning_rate: 0.001
     cfn_optimizer: null
     cfn_output_dim: 128
