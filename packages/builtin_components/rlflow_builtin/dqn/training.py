@@ -1,402 +1,63 @@
 from __future__ import annotations
 
 import warnings
-from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, NamedTuple
+from typing import Any
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
 
+from rlflow_builtin.dqn.config import (
+    DQN_AGENT_COMPONENT as DQN_AGENT_COMPONENT,
+)
+from rlflow_builtin.dqn.config import (
+    DQN_RMAX_AGENT_COMPONENT as DQN_RMAX_AGENT_COMPONENT,
+)
+from rlflow_builtin.dqn.config import (
+    ActionConditioning,
+    DqnAgentConfig,
+    DqnIntrinsicConfig,
+    DqnReplayConfig,
+)
+from rlflow_builtin.dqn.config import (
+    _canonicalize_action_conditioning as _canonicalize_action_conditioning,
+)
+from rlflow_builtin.dqn.config import (
+    _simhash_mode as _simhash_mode,
+)
+from rlflow_builtin.dqn.config import (
+    dqn_agent_config as dqn_agent_config,
+)
+from rlflow_builtin.dqn.config import (
+    dqn_intrinsic_config as dqn_intrinsic_config,
+)
+from rlflow_builtin.dqn.config import (
+    dqn_replay_config as dqn_replay_config,
+)
+from rlflow_builtin.dqn.networks import (
+    _apply_autoencoder_encoder,
+    _apply_mlp,
+    _init_autoencoder,
+    _init_mlp,
+)
+from rlflow_builtin.dqn.replay import (
+    _initial_replay_state,
+    _push_replay,
+    _replay_arrays,
+    _replay_intrinsic_target_dim,
+    _resolve_replay_save_path,
+    _sample_replay,
+)
+from rlflow_builtin.dqn.state import (
+    DqnIntrinsicState,
+    DqnRunResult,
+    DqnTrainState,
+    _DqnEnvironment,
+)
 from rlflow_builtin.tabular.environments import environment_config, initial_state, make_step_fn
 from rlflow_builtin.tabular.types import RunnerConfig
-
-DQN_AGENT_COMPONENT = "builtin.agent.dqn_jax"
-DQN_RMAX_AGENT_COMPONENT = "builtin.agent.dqn_rmax_jax"
-DQN_REPLAY_COMPONENTS = {"builtin.replay.uniform", "builtin.replay.dqn_uniform"}
-
-AgentAlgorithm = Literal["dqn", "dqn_rmax"]
-IntrinsicKind = Literal["none", "rnd", "cfn", "count", "simhash"]
-ActionConditioning = Literal["none", "input", "output", "pair"]
-CountTableOverflow = Literal["warn", "error"]
-CountKeyMode = Literal["dense_exact", "oracle_tabular"]
-SimHashMode = Literal["static", "learned"]
-
-
-@dataclass(frozen=True)
-class DqnAgentConfig:
-    algorithm: AgentAlgorithm
-    learning_rate: float
-    discount: float
-    hidden_units: tuple[int, ...]
-    activation: str
-    update_frequency: int
-    target_update_frequency: int
-    epsilon_start: float
-    epsilon_end: float
-    epsilon_decay_steps: int
-    eval_epsilon: float
-    loss_type: str
-    huber_delta: float
-    double_q: bool
-    max_grad_norm: float
-    optimizer: str
-    optimizer_beta1: float
-    optimizer_beta2: float
-    optimizer_epsilon: float
-    optimizer_weight_decay: float
-    optimizer_momentum: float
-    optimizer_decay: float
-    optimizer_centered: bool
-    normalize_observations: bool
-    obs_normalization_epsilon: float
-    obs_normalization_clip: float | None
-    rmax_bonus_threshold: float
-    rmax_decision_v_max: float
-    rmax_update_v_max: float
-    seed: int
-
-
-@dataclass(frozen=True)
-class DqnReplayConfig:
-    name: str
-    capacity: int
-    batch_size: int
-    min_size: int
-    updates_per_step: int
-    save_dataset_path: str = ""
-    intrinsic_updates_per_step: int | None = None
-    q_network_updates_per_step: int | None = None
-
-
-@dataclass(frozen=True)
-class DqnIntrinsicConfig:
-    kind: IntrinsicKind = "none"
-    intrinsic_reward_scale: float = 0.0
-    intrinsic_stats_decay: float = 0.99
-    intrinsic_reward_epsilon: float = 1e-4
-    intrinsic_reward_clip: float | None = 10.0
-    intrinsic_reward_center: bool = False
-    hidden_units: tuple[int, ...] = ()
-    activation: str = "relu"
-    output_dim: int = 1
-    optimizer: str = "adam"
-    learning_rate: float = 0.001
-    action_conditioning: ActionConditioning = "none"
-    update_period: int = 1
-    cfn_use_random_prior: bool = True
-    cfn_prior_scale: float = 1.0
-    cfn_bonus_exponent: float = 0.5
-    cfn_final_tanh: bool = False
-    count_table_size: int = 16384
-    count_table_overflow: CountTableOverflow = "warn"
-    count_key_mode: CountKeyMode = "dense_exact"
-    count_bonus_exponent: float = 0.5
-    count_min_count: float = 1.0
-    count_ignore_empty_room_distractor: bool = False
-    simhash_mode: SimHashMode = "static"
-    simhash_bits: int = 32
-    simhash_table_size: int = 16384
-    simhash_table_overflow: CountTableOverflow = "warn"
-    simhash_bonus_exponent: float = 0.5
-    simhash_min_count: float = 1.0
-    simhash_update_period: int = 1
-    simhash_ignore_empty_room_distractor: bool = False
-
-
-@dataclass(frozen=True)
-class DqnRunResult:
-    params: tuple[dict[str, jax.Array], ...]
-    aux_params: dict[str, tuple[dict[str, jax.Array], ...]]
-    train_returns: np.ndarray
-    train_discounted_returns: np.ndarray | None
-    train_lengths: np.ndarray
-    train_losses: np.ndarray
-    eval_returns: np.ndarray
-    eval_discounted_returns: np.ndarray | None
-    eval_lengths: np.ndarray
-    source_observation_shape: tuple[int, ...]
-    source_observation_dtype: str
-    input_dim: int
-    num_actions: int
-    replay_arrays: dict[str, np.ndarray] | None = None
-    count_table_entries: int | None = None
-    count_table_overflow: bool | None = None
-
-
-class DqnReplayState(NamedTuple):
-    observations: jax.Array
-    actions: jax.Array
-    rewards: jax.Array
-    next_observations: jax.Array
-    terminals: jax.Array
-    intrinsic_targets: jax.Array
-    reward_intrinsic_targets: jax.Array
-    state_ids: jax.Array
-    next_state_ids: jax.Array
-    source_observations: jax.Array
-    source_next_observations: jax.Array
-    size: jax.Array
-    index: jax.Array
-
-
-class DqnIntrinsicState(NamedTuple):
-    target_params: tuple[dict[str, jax.Array], ...]
-    prior_params: tuple[dict[str, jax.Array], ...]
-    predictor_params: tuple[dict[str, jax.Array], ...]
-    opt_state: optax.OptState
-    reward_mean: jax.Array
-    reward_var: jax.Array
-    count_keys: jax.Array
-    counts: jax.Array
-    count_size: jax.Array
-    count_overflow: jax.Array
-
-
-class DqnTrainState(NamedTuple):
-    params: tuple[dict[str, jax.Array], ...]
-    target_params: tuple[dict[str, jax.Array], ...]
-    opt_state: optax.OptState
-    intrinsic_state: DqnIntrinsicState
-    reward_intrinsic_state: DqnIntrinsicState
-    replay_state: DqnReplayState
-    key: jax.Array
-    global_step: jax.Array
-    gradient_step: jax.Array
-    intrinsic_gradient_step: jax.Array
-    reward_intrinsic_gradient_step: jax.Array
-
-
-@dataclass(frozen=True)
-class _DqnEnvironment:
-    observation_shape: tuple[int, ...]
-    observation_dtype: str
-    input_dim: int
-    num_actions: int
-    reset: Callable[[jax.Array], Any]
-    step: Callable[[Any, jax.Array, jax.Array], Any]
-    observation: Callable[[Any], Any]
-    reward: Callable[[Any], jax.Array]
-    done: Callable[[Any], jax.Array]
-    encode: Callable[[Any], jax.Array]
-    oracle_state_id: Callable[[Any], jax.Array] | None = None
-    oracle_state_space_size: int | None = None
-
-
-def dqn_agent_config(component_id: str, config: dict[str, Any]) -> DqnAgentConfig:
-    if component_id not in {DQN_AGENT_COMPONENT, DQN_RMAX_AGENT_COMPONENT}:
-        raise ValueError(
-            f"Unsupported DQN agent {component_id!r}. Use {DQN_AGENT_COMPONENT} "
-            f"or {DQN_RMAX_AGENT_COMPONENT} and connect R-Max knownness through "
-            "the knownness_signal port."
-        )
-    algorithm: AgentAlgorithm = "dqn_rmax" if component_id == DQN_RMAX_AGENT_COMPONENT else "dqn"
-    return DqnAgentConfig(
-        algorithm=algorithm,
-        learning_rate=float(config["learning_rate"]),
-        discount=float(config["discount"]),
-        hidden_units=_hidden_units(config, "hidden"),
-        activation=str(config.get("activation", "relu")),
-        update_frequency=int(config["update_frequency"]),
-        target_update_frequency=int(
-            config.get("target_update_freq", config["target_update_frequency"])
-        ),
-        epsilon_start=float(config.get("eps_start", config["epsilon_start"])),
-        epsilon_end=float(config.get("eps_end", config["epsilon_end"])),
-        epsilon_decay_steps=int(config.get("eps_decay_steps", config["epsilon_decay_steps"])),
-        eval_epsilon=float(config["eval_epsilon"]),
-        loss_type=str(config["loss_type"]),
-        huber_delta=float(config.get("huber_delta", 1.0)),
-        double_q=bool(config.get("double_q", False)),
-        max_grad_norm=float(config.get("max_grad_norm", 1.0)),
-        optimizer=str(config.get("optimizer", "adam")),
-        optimizer_beta1=float(config.get("optimizer_beta1", 0.9)),
-        optimizer_beta2=float(config.get("optimizer_beta2", 0.999)),
-        optimizer_epsilon=float(config.get("optimizer_epsilon", 1e-8)),
-        optimizer_weight_decay=float(config.get("optimizer_weight_decay", 0.0)),
-        optimizer_momentum=float(config.get("optimizer_momentum", 0.0)),
-        optimizer_decay=float(config.get("optimizer_decay", 0.95)),
-        optimizer_centered=bool(config.get("optimizer_centered", False)),
-        normalize_observations=bool(config.get("normalize_observations", False)),
-        obs_normalization_epsilon=float(config.get("obs_normalization_epsilon", 1e-8)),
-        obs_normalization_clip=config.get("obs_normalization_clip", 5.0),
-        rmax_bonus_threshold=float(config.get("rmax_bonus_threshold", 0.5)),
-        rmax_decision_v_max=float(
-            config.get(
-                "rmax_decision_v_max",
-                config.get("rmax_v_max", 1.0 / max(1.0 - float(config["discount"]), 1e-6)),
-            )
-        ),
-        rmax_update_v_max=float(
-            config.get(
-                "rmax_update_v_max",
-                config.get("rmax_v_max", 1.0 / max(1.0 - float(config["discount"]), 1e-6)),
-            )
-        ),
-        seed=int(config.get("seed", 0)),
-    )
-
-
-def dqn_replay_config(component_id: str, config: dict[str, Any]) -> DqnReplayConfig:
-    if component_id not in DQN_REPLAY_COMPONENTS:
-        raise ValueError(
-            "DQN requires builtin.replay.uniform on the runner replay_buffer port, "
-            f"got {component_id!r}."
-        )
-    capacity = int(config["capacity"])
-    batch_size = int(config["batch_size"])
-    min_size = int(config["min_size"])
-    if min_size > capacity:
-        raise ValueError(f"{component_id} min_size cannot exceed capacity")
-    if batch_size > capacity:
-        raise ValueError(f"{component_id} batch_size cannot exceed capacity")
-    updates_per_step = int(config["updates_per_step"])
-    intrinsic_updates_per_step = _optional_update_count(
-        config,
-        "intrinsic_updates_per_step",
-        updates_per_step,
-    )
-    q_network_updates_per_step = _optional_update_count(
-        config,
-        "q_network_updates_per_step",
-        updates_per_step,
-    )
-    if intrinsic_updates_per_step < 0:
-        raise ValueError(f"{component_id} intrinsic_updates_per_step cannot be negative")
-    if q_network_updates_per_step < 0:
-        raise ValueError(f"{component_id} q_network_updates_per_step cannot be negative")
-    return DqnReplayConfig(
-        name=component_id,
-        capacity=capacity,
-        batch_size=batch_size,
-        min_size=min_size,
-        updates_per_step=updates_per_step,
-        intrinsic_updates_per_step=intrinsic_updates_per_step,
-        q_network_updates_per_step=q_network_updates_per_step,
-        save_dataset_path=str(config.get("save_dataset_path", "")),
-    )
-
-
-def _optional_update_count(config: dict[str, Any], key: str, default: int) -> int:
-    value = config.get(key)
-    return default if value is None else int(value)
-
-
-def dqn_intrinsic_config(
-    component_id: str | None,
-    config: dict[str, Any] | None,
-    agent: DqnAgentConfig,
-) -> DqnIntrinsicConfig:
-    if component_id is None:
-        return DqnIntrinsicConfig(
-            hidden_units=agent.hidden_units,
-            activation=agent.activation,
-            optimizer=agent.optimizer,
-            learning_rate=agent.learning_rate,
-        )
-    config = config or {}
-    if component_id == "builtin.intrinsic.rnd":
-        return DqnIntrinsicConfig(
-            kind="rnd",
-            intrinsic_reward_scale=float(config["intrinsic_reward_scale"]),
-            intrinsic_stats_decay=float(config["intrinsic_stats_decay"]),
-            intrinsic_reward_epsilon=float(config["intrinsic_reward_epsilon"]),
-            intrinsic_reward_clip=config["intrinsic_reward_clip"],
-            intrinsic_reward_center=bool(config["intrinsic_reward_center"]),
-            hidden_units=_hidden_units(config, "rnd", default=agent.hidden_units),
-            activation=str(config.get("rnd_activation") or agent.activation),
-            output_dim=int(config["rnd_output_dim"]),
-            optimizer=str(config.get("rnd_optimizer") or agent.optimizer),
-            learning_rate=float(config.get("rnd_learning_rate") or agent.learning_rate),
-            action_conditioning=_resolve_action_conditioning(
-                config.get("rnd_include_action"),
-                config["rnd_action_conditioning"],
-            ),
-            update_period=int(config["rnd_update_period"]),
-        )
-    if component_id == "builtin.intrinsic.cfn":
-        return DqnIntrinsicConfig(
-            kind="cfn",
-            intrinsic_reward_scale=float(config["intrinsic_reward_scale"]),
-            intrinsic_stats_decay=float(config["intrinsic_stats_decay"]),
-            intrinsic_reward_epsilon=float(config["intrinsic_reward_epsilon"]),
-            intrinsic_reward_clip=config["intrinsic_reward_clip"],
-            intrinsic_reward_center=bool(config["intrinsic_reward_center"]),
-            hidden_units=_hidden_units(config, "cfn", default=agent.hidden_units),
-            activation=str(config.get("cfn_activation") or agent.activation),
-            output_dim=int(config["cfn_output_dim"]),
-            optimizer=str(config.get("cfn_optimizer") or agent.optimizer),
-            learning_rate=float(config.get("cfn_learning_rate") or agent.learning_rate),
-            action_conditioning=_canonicalize_action_conditioning(
-                config["cfn_action_conditioning"]
-            ),
-            update_period=int(config["cfn_update_period"]),
-            cfn_use_random_prior=bool(config["cfn_use_random_prior"]),
-            cfn_prior_scale=float(config["cfn_prior_scale"]),
-            cfn_bonus_exponent=float(config["cfn_bonus_exponent"]),
-            cfn_final_tanh=bool(config["cfn_final_tanh"]),
-        )
-    if component_id == "builtin.intrinsic.count":
-        return DqnIntrinsicConfig(
-            kind="count",
-            intrinsic_reward_scale=float(config["intrinsic_reward_scale"]),
-            intrinsic_stats_decay=float(config["intrinsic_stats_decay"]),
-            intrinsic_reward_epsilon=float(config["intrinsic_reward_epsilon"]),
-            intrinsic_reward_clip=config["intrinsic_reward_clip"],
-            intrinsic_reward_center=bool(config["intrinsic_reward_center"]),
-            hidden_units=(),
-            activation=agent.activation,
-            output_dim=1,
-            optimizer=agent.optimizer,
-            learning_rate=agent.learning_rate,
-            action_conditioning=_canonicalize_action_conditioning(
-                config["count_action_conditioning"]
-            ),
-            count_table_size=int(config["count_table_size"]),
-            count_table_overflow=_count_table_overflow_mode(
-                config.get("count_table_overflow", "warn")
-            ),
-            count_key_mode=_count_key_mode(config.get("count_key_mode", "dense_exact")),
-            count_bonus_exponent=float(config["count_bonus_exponent"]),
-            count_min_count=float(config["count_min_count"]),
-            count_ignore_empty_room_distractor=bool(
-                config.get("count_ignore_empty_room_distractor", False)
-            ),
-        )
-    if component_id == "builtin.intrinsic.simhash":
-        return DqnIntrinsicConfig(
-            kind="simhash",
-            intrinsic_reward_scale=float(config["intrinsic_reward_scale"]),
-            intrinsic_stats_decay=float(config["intrinsic_stats_decay"]),
-            intrinsic_reward_epsilon=float(config["intrinsic_reward_epsilon"]),
-            intrinsic_reward_clip=config["intrinsic_reward_clip"],
-            intrinsic_reward_center=bool(config["intrinsic_reward_center"]),
-            hidden_units=_hidden_units(config, "simhash", default=agent.hidden_units),
-            activation=str(config.get("simhash_activation") or agent.activation),
-            output_dim=int(config["simhash_latent_dim"]),
-            optimizer=str(config.get("simhash_optimizer") or agent.optimizer),
-            learning_rate=float(config.get("simhash_learning_rate") or agent.learning_rate),
-            action_conditioning=_canonicalize_action_conditioning(
-                config["simhash_action_conditioning"]
-            ),
-            update_period=int(config["simhash_update_period"]),
-            simhash_mode=_simhash_mode(config["simhash_mode"]),
-            simhash_bits=int(config["simhash_bits"]),
-            simhash_table_size=int(config["simhash_table_size"]),
-            simhash_table_overflow=_count_table_overflow_mode(
-                config.get("simhash_table_overflow", "warn")
-            ),
-            simhash_bonus_exponent=float(config["simhash_bonus_exponent"]),
-            simhash_min_count=float(config["simhash_min_count"]),
-            simhash_update_period=int(config["simhash_update_period"]),
-            simhash_ignore_empty_room_distractor=bool(
-                config.get("simhash_ignore_empty_room_distractor", False)
-            ),
-        )
-    raise ValueError(f"Unsupported DQN intrinsic reward component: {component_id}")
 
 
 def run_dqn_training(
@@ -1975,100 +1636,6 @@ def _oracle_state_id_for_intrinsics(
     return jnp.asarray(0, dtype=jnp.int32)
 
 
-def _initial_replay_state(
-    capacity: int,
-    input_dim: int,
-    intrinsic_target_dim: int,
-    source_observation_shape: tuple[int, ...],
-    source_observation_dtype: str,
-    reward_intrinsic_target_dim: int | None = None,
-) -> DqnReplayState:
-    source_shape = (capacity, *source_observation_shape)
-    source_dtype = np.dtype(source_observation_dtype)
-    reward_intrinsic_target_dim = reward_intrinsic_target_dim or 1
-    return DqnReplayState(
-        observations=jnp.zeros((capacity, input_dim), dtype=jnp.float32),
-        actions=jnp.zeros((capacity,), dtype=jnp.int32),
-        rewards=jnp.zeros((capacity,), dtype=jnp.float32),
-        next_observations=jnp.zeros((capacity, input_dim), dtype=jnp.float32),
-        terminals=jnp.zeros((capacity,), dtype=jnp.float32),
-        intrinsic_targets=jnp.zeros((capacity, intrinsic_target_dim), dtype=jnp.float32),
-        reward_intrinsic_targets=jnp.zeros(
-            (capacity, reward_intrinsic_target_dim),
-            dtype=jnp.float32,
-        ),
-        state_ids=jnp.zeros((capacity,), dtype=jnp.int32),
-        next_state_ids=jnp.zeros((capacity,), dtype=jnp.int32),
-        source_observations=jnp.zeros(source_shape, dtype=source_dtype),
-        source_next_observations=jnp.zeros(source_shape, dtype=source_dtype),
-        size=jnp.asarray(0, dtype=jnp.int32),
-        index=jnp.asarray(0, dtype=jnp.int32),
-    )
-
-
-def _push_replay(
-    state: DqnReplayState,
-    observation: jax.Array,
-    source_observation: jax.Array,
-    action: jax.Array,
-    reward: jax.Array,
-    next_observation: jax.Array,
-    source_next_observation: jax.Array,
-    terminal: jax.Array,
-    intrinsic_target: jax.Array,
-    state_id: jax.Array,
-    next_state_id: jax.Array,
-    reward_intrinsic_target: jax.Array | None = None,
-) -> DqnReplayState:
-    index = state.index
-    capacity = state.observations.shape[0]
-    if reward_intrinsic_target is None:
-        reward_intrinsic_target = jnp.zeros(
-            (state.reward_intrinsic_targets.shape[-1],),
-            dtype=jnp.float32,
-        )
-    return DqnReplayState(
-        observations=state.observations.at[index].set(observation),
-        actions=state.actions.at[index].set(action.astype(jnp.int32)),
-        rewards=state.rewards.at[index].set(reward.astype(jnp.float32)),
-        next_observations=state.next_observations.at[index].set(next_observation),
-        terminals=state.terminals.at[index].set(terminal.astype(jnp.float32)),
-        intrinsic_targets=state.intrinsic_targets.at[index].set(intrinsic_target),
-        reward_intrinsic_targets=state.reward_intrinsic_targets.at[index].set(
-            reward_intrinsic_target
-        ),
-        state_ids=state.state_ids.at[index].set(state_id.astype(jnp.int32)),
-        next_state_ids=state.next_state_ids.at[index].set(next_state_id.astype(jnp.int32)),
-        source_observations=state.source_observations.at[index].set(
-            source_observation.astype(state.source_observations.dtype)
-        ),
-        source_next_observations=state.source_next_observations.at[index].set(
-            source_next_observation.astype(state.source_next_observations.dtype)
-        ),
-        size=jnp.minimum(state.size + 1, capacity).astype(jnp.int32),
-        index=((index + 1) % capacity).astype(jnp.int32),
-    )
-
-
-def _sample_replay(
-    state: DqnReplayState,
-    key: jax.Array,
-    batch_size: int,
-) -> dict[str, jax.Array]:
-    indices = jax.random.randint(key, (batch_size,), 0, state.size, dtype=jnp.int32)
-    return {
-        "observations": state.observations[indices],
-        "actions": state.actions[indices],
-        "rewards": state.rewards[indices],
-        "next_observations": state.next_observations[indices],
-        "terminals": state.terminals[indices],
-        "intrinsic_targets": state.intrinsic_targets[indices],
-        "reward_intrinsic_targets": state.reward_intrinsic_targets[indices],
-        "state_ids": state.state_ids[indices],
-        "next_state_ids": state.next_state_ids[indices],
-    }
-
-
 def _initial_intrinsic_state(
     agent: DqnAgentConfig,
     intrinsic: DqnIntrinsicConfig,
@@ -2161,114 +1728,6 @@ def _sample_intrinsic_target(
         return jnp.zeros((target_dim,), dtype=jnp.float32)
     targets = jax.random.bernoulli(key, p=0.5, shape=(target_dim,))
     return jnp.where(targets, 1.0, -1.0).astype(jnp.float32)
-
-
-def _replay_intrinsic_target_dim(intrinsic: DqnIntrinsicConfig) -> int:
-    if intrinsic.kind == "cfn":
-        return intrinsic.output_dim
-    return 1
-
-
-def _replay_arrays(
-    state: DqnReplayState,
-    knownness: DqnIntrinsicConfig,
-    intrinsic_reward: DqnIntrinsicConfig,
-    *,
-    shared_intrinsic: bool,
-) -> dict[str, np.ndarray]:
-    size = int(np.asarray(jax.device_get(state.size)))
-    arrays = {
-        "observations": np.asarray(jax.device_get(state.source_observations))[:size],
-        "actions": np.asarray(jax.device_get(state.actions))[:size],
-        "rewards": np.asarray(jax.device_get(state.rewards))[:size],
-        "next_observations": np.asarray(jax.device_get(state.source_next_observations))[:size],
-        "terminals": np.asarray(jax.device_get(state.terminals))[:size].astype(np.bool_),
-    }
-    if shared_intrinsic and knownness.kind == "cfn":
-        arrays["cfn_targets"] = np.asarray(jax.device_get(state.intrinsic_targets))[:size]
-    elif knownness.kind == "cfn" and intrinsic_reward.kind == "none":
-        arrays["cfn_targets"] = np.asarray(jax.device_get(state.intrinsic_targets))[:size]
-    elif intrinsic_reward.kind == "cfn" and knownness.kind == "none":
-        arrays["cfn_targets"] = np.asarray(jax.device_get(state.reward_intrinsic_targets))[:size]
-    else:
-        if knownness.kind == "cfn":
-            arrays["knownness_cfn_targets"] = np.asarray(jax.device_get(state.intrinsic_targets))[
-                :size
-            ]
-        if intrinsic_reward.kind == "cfn":
-            arrays["intrinsic_reward_cfn_targets"] = np.asarray(
-                jax.device_get(state.reward_intrinsic_targets)
-            )[:size]
-    return arrays
-
-
-def _init_mlp(
-    key: jax.Array,
-    input_dim: int,
-    hidden_units: tuple[int, ...],
-    output_dim: int,
-) -> tuple[dict[str, jax.Array], ...]:
-    dims = (input_dim, *hidden_units, output_dim)
-    keys = jax.random.split(key, len(dims) - 1)
-    params = []
-    for layer_key, in_dim, out_dim in zip(keys, dims[:-1], dims[1:], strict=True):
-        scale = jnp.sqrt(2.0 / float(max(in_dim, 1)))
-        params.append(
-            {
-                "w": jax.random.normal(layer_key, (in_dim, out_dim), dtype=jnp.float32) * scale,
-                "b": jnp.zeros((out_dim,), dtype=jnp.float32),
-            }
-        )
-    return tuple(params)
-
-
-def _init_autoencoder(
-    key: jax.Array,
-    input_dim: int,
-    hidden_units: tuple[int, ...],
-    latent_dim: int,
-) -> tuple[dict[str, jax.Array], ...]:
-    decoder_units = tuple(reversed(hidden_units))
-    dims = (input_dim, *hidden_units, latent_dim, *decoder_units, input_dim)
-    keys = jax.random.split(key, len(dims) - 1)
-    params = []
-    for layer_key, in_dim, out_dim in zip(keys, dims[:-1], dims[1:], strict=True):
-        scale = jnp.sqrt(2.0 / float(max(in_dim, 1)))
-        params.append(
-            {
-                "w": jax.random.normal(layer_key, (in_dim, out_dim), dtype=jnp.float32) * scale,
-                "b": jnp.zeros((out_dim,), dtype=jnp.float32),
-            }
-        )
-    return tuple(params)
-
-
-def _apply_mlp(
-    params: tuple[dict[str, jax.Array], ...],
-    observations: jax.Array,
-    activation: str = "relu",
-) -> jax.Array:
-    x = jnp.asarray(observations, dtype=jnp.float32)
-    for layer in params[:-1]:
-        x = _activation(x @ layer["w"] + layer["b"], activation)
-    output = params[-1]
-    return x @ output["w"] + output["b"]
-
-
-def _apply_autoencoder_encoder(
-    params: tuple[dict[str, jax.Array], ...],
-    observations: jax.Array,
-    hidden_units: tuple[int, ...],
-    activation: str = "relu",
-) -> jax.Array:
-    x = jnp.asarray(observations, dtype=jnp.float32)
-    latent_layer_index = len(hidden_units)
-    for index, layer in enumerate(params):
-        x = x @ layer["w"] + layer["b"]
-        if index == latent_layer_index:
-            return x
-        x = _activation(x, activation)
-    return x
 
 
 def _q_loss(
@@ -3068,18 +2527,6 @@ def _td_loss(td_error: jax.Array, loss_type: str, huber_delta: float) -> jax.Arr
     return 0.5 * quadratic**2 + huber_delta * linear
 
 
-def _activation(x: jax.Array, name: str) -> jax.Array:
-    if name == "tanh":
-        return jnp.tanh(x)
-    if name == "gelu":
-        return jax.nn.gelu(x)
-    if name == "elu":
-        return jax.nn.elu(x)
-    if name == "linear":
-        return x
-    return jax.nn.relu(x)
-
-
 def _optimizer(
     agent: DqnAgentConfig,
     learning_rate: float,
@@ -3120,94 +2567,6 @@ def _integer_observation_scale(dtype: np.dtype) -> float | None:
         return None
     info = np.iinfo(dtype)
     return float(info.max) if info.max > 0 else None
-
-
-def _hidden_units(
-    config: dict[str, Any],
-    prefix: str,
-    *,
-    default: tuple[int, ...] | None = None,
-) -> tuple[int, ...]:
-    hidden_dims = config.get(f"{prefix}_hidden_dims")
-    if hidden_dims is None and prefix == "hidden":
-        hidden_dims = config.get("hidden_dims")
-    if hidden_dims:
-        return tuple(int(dim) for dim in hidden_dims)
-
-    hidden_units = config.get(f"{prefix}_hidden_units")
-    if hidden_units is None and prefix == "hidden":
-        hidden_units = config.get("hidden_units")
-    if hidden_units is None:
-        return default or ()
-    if isinstance(hidden_units, int):
-        return (int(hidden_units),)
-    if isinstance(hidden_units, str):
-        return tuple(int(dim.strip()) for dim in hidden_units.split(",") if dim.strip())
-    return tuple(int(dim) for dim in hidden_units)
-
-
-def _canonicalize_action_conditioning(mode: str | bool) -> ActionConditioning:
-    if isinstance(mode, bool):
-        return "input" if mode else "none"
-    normalized = str(mode).strip().lower()
-    aliases = {
-        "none": "none",
-        "state": "none",
-        "observation": "none",
-        "input": "input",
-        "action_input": "input",
-        "include_action": "input",
-        "output": "output",
-        "action_output": "output",
-        "per_action": "output",
-        "pair": "pair",
-        "state_action": "pair",
-        "state_action_pair": "pair",
-        "onehot_pair": "pair",
-        "obs_action_onehot": "pair",
-    }
-    if normalized not in aliases:
-        raise ValueError(f"Unsupported action conditioning mode: {mode!r}")
-    return aliases[normalized]  # type: ignore[return-value]
-
-
-def _resolve_action_conditioning(
-    legacy_include_action: bool | None,
-    mode: str | bool,
-) -> ActionConditioning:
-    canonical = _canonicalize_action_conditioning(mode)
-    if legacy_include_action is None:
-        return canonical
-    legacy = _canonicalize_action_conditioning(legacy_include_action)
-    if canonical != "none" and canonical != legacy:
-        raise ValueError(
-            "rnd_include_action and rnd_action_conditioning disagree: "
-            f"{legacy_include_action!r} vs {mode!r}"
-        )
-    return legacy
-
-
-def _count_table_overflow_mode(mode: str) -> CountTableOverflow:
-    normalized = str(mode).strip().lower()
-    if normalized not in {"warn", "error"}:
-        raise ValueError("count_table_overflow must be 'warn' or 'error'")
-    return normalized  # type: ignore[return-value]
-
-
-def _count_key_mode(value: str) -> CountKeyMode:
-    normalized = str(value).strip().lower()
-    if normalized not in {"dense_exact", "oracle_tabular"}:
-        raise ValueError("count_key_mode must be 'dense_exact' or 'oracle_tabular'")
-    return normalized  # type: ignore[return-value]
-
-
-def _simhash_mode(mode: str) -> SimHashMode:
-    normalized = str(mode).strip().lower()
-    if normalized == "autoencoder":
-        normalized = "learned"
-    if normalized not in {"static", "learned"}:
-        raise ValueError("simhash_mode must be 'static' or 'learned'")
-    return normalized  # type: ignore[return-value]
 
 
 def _count_table_status(
@@ -3365,12 +2724,3 @@ def _timestep_done(timestep: Any) -> jax.Array:
     if hasattr(timestep, "is_done"):
         return timestep.is_done()
     return jnp.logical_or(timestep.is_termination(), timestep.is_truncation())
-
-
-def _resolve_replay_save_path(path: str, run_dir: Path) -> Path:
-    candidate = Path(path)
-    if candidate.suffix == "":
-        candidate = candidate.with_suffix(".npz")
-    if candidate.is_absolute():
-        return candidate
-    return (run_dir / candidate).resolve()
