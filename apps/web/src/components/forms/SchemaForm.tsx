@@ -38,7 +38,10 @@ function FieldInput({
   onChange: (value: unknown) => void;
 }) {
   if (schema.enum) {
-    const selectedIndex = Math.max(0, schema.enum.findIndex((option) => valuesEqual(option, value)));
+    const selectedIndex = Math.max(
+      0,
+      schema.enum.findIndex((option) => valuesEqual(option, value)),
+    );
     return (
       <select
         value={String(selectedIndex)}
@@ -76,7 +79,10 @@ function FieldInput({
             onChange(null);
             return;
           }
-          const parsed = numericType === "integer" ? Number.parseInt(event.target.value, 10) : Number(event.target.value);
+          const parsed =
+            numericType === "integer"
+              ? Number.parseInt(event.target.value, 10)
+              : Number(event.target.value);
           onChange(Number.isNaN(parsed) ? 0 : parsed);
         }}
       />

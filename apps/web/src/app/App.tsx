@@ -1,5 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Boxes, Brain, Database, FlaskConical, FolderOpen, GitBranch, ListChecks, Map, RefreshCw, Save, SlidersHorizontal } from "lucide-react";
+import {
+  Boxes,
+  Brain,
+  Database,
+  FlaskConical,
+  FolderOpen,
+  GitBranch,
+  ListChecks,
+  Map,
+  RefreshCw,
+  Save,
+  SlidersHorizontal,
+} from "lucide-react";
 import { useState } from "react";
 import { api } from "../api/client";
 import { ComponentPalette } from "../components/flow/ComponentPalette";
@@ -24,7 +36,10 @@ export function App() {
   const [experiment, setExperiment] = useState<ExperimentSpec>();
   const [selectedWorkflowId, setSelectedWorkflowId] = useState("");
   const components = useQuery({ queryKey: ["components"], queryFn: api.components });
-  const workflowGallery = useQuery({ queryKey: ["workflow-gallery"], queryFn: api.workflowGallery });
+  const workflowGallery = useQuery({
+    queryKey: ["workflow-gallery"],
+    queryFn: api.workflowGallery,
+  });
   const workflowName = useFlowStore((state) => state.workflowName);
   const setWorkflowName = useFlowStore((state) => state.setWorkflowName);
   const toWorkflow = useFlowStore((state) => state.toWorkflow);
@@ -73,7 +88,10 @@ export function App() {
           <ListChecks size={16} />
           Jobs
         </button>
-        <button className={page === "environment" ? "active" : ""} onClick={() => setPage("environment")}>
+        <button
+          className={page === "environment" ? "active" : ""}
+          onClick={() => setPage("environment")}
+        >
           <Map size={16} />
           Environment
         </button>
@@ -89,7 +107,10 @@ export function App() {
           <SlidersHorizontal size={16} />
           Sweep
         </button>
-        <button className={page === "experiment" ? "active" : ""} onClick={() => setPage("experiment")}>
+        <button
+          className={page === "experiment" ? "active" : ""}
+          onClick={() => setPage("experiment")}
+        >
           <FlaskConical size={16} />
           Experiment
         </button>
@@ -129,7 +150,11 @@ export function App() {
             <FolderOpen size={16} />
             Load
           </button>
-          <button title="Refresh gallery" onClick={() => workflowGallery.refetch()} disabled={workflowGallery.isFetching}>
+          <button
+            title="Refresh gallery"
+            onClick={() => workflowGallery.refetch()}
+            disabled={workflowGallery.isFetching}
+          >
             <RefreshCw size={16} />
           </button>
         </div>
@@ -154,7 +179,12 @@ export function App() {
         </div>
       )}
       {page === "jobs" && <JobsPage />}
-      {page === "environment" && <EnvironmentPlayground components={components.data ?? []} isLoading={components.isLoading} />}
+      {page === "environment" && (
+        <EnvironmentPlayground
+          components={components.data ?? []}
+          isLoading={components.isLoading}
+        />
+      )}
       {page === "dataset" && <DatasetPage />}
       {page === "offline" && <OfflineRlPage />}
       {page === "sweep" && <SweepPage />}

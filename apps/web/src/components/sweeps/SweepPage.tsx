@@ -2,7 +2,12 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Play, Plus, SlidersHorizontal, Wand2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/client";
-import type { SweepBuildRequest, SweepCandidate, SweepCompilation, SweepRunResponse } from "../../types/schema";
+import type {
+  SweepBuildRequest,
+  SweepCandidate,
+  SweepCompilation,
+  SweepRunResponse,
+} from "../../types/schema";
 
 type SelectedParameter = {
   target: string;
@@ -91,13 +96,17 @@ export function SweepPage() {
         target: candidate.target,
         label: candidate.label.replace(/\./g, "_"),
         valueType: candidate.value_type,
-        valuesText: valuesText(candidate.recommended_values.length ? candidate.recommended_values : [candidate.value]),
+        valuesText: valuesText(
+          candidate.recommended_values.length ? candidate.recommended_values : [candidate.value],
+        ),
       },
     ]);
   }
 
   function updateSelected(target: string, patch: Partial<SelectedParameter>) {
-    setSelected((items) => items.map((item) => (item.target === target ? { ...item, ...patch } : item)));
+    setSelected((items) =>
+      items.map((item) => (item.target === target ? { ...item, ...patch } : item)),
+    );
   }
 
   return (
@@ -108,11 +117,17 @@ export function SweepPage() {
           Sweep
         </h1>
         <div className="action-row">
-          <button onClick={() => compile.mutate()} disabled={!workflowId || compile.isPending || selected.length + seedCount === 0}>
+          <button
+            onClick={() => compile.mutate()}
+            disabled={!workflowId || compile.isPending || selected.length + seedCount === 0}
+          >
             <Wand2 size={16} />
             Compile
           </button>
-          <button onClick={() => run.mutate()} disabled={!workflowId || run.isPending || selected.length + seedCount === 0}>
+          <button
+            onClick={() => run.mutate()}
+            disabled={!workflowId || run.isPending || selected.length + seedCount === 0}
+          >
             <Play size={16} />
             Run
           </button>
@@ -140,14 +155,20 @@ export function SweepPage() {
             </label>
             <label className="field">
               <span>method</span>
-              <select value={method} onChange={(event) => setMethod(event.target.value as "grid" | "random")}>
+              <select
+                value={method}
+                onChange={(event) => setMethod(event.target.value as "grid" | "random")}
+              >
                 <option value="grid">grid</option>
                 <option value="random">random</option>
               </select>
             </label>
             <label className="field">
               <span>backend</span>
-              <select value={backend} onChange={(event) => setBackend(event.target.value as typeof backend)}>
+              <select
+                value={backend}
+                onChange={(event) => setBackend(event.target.value as typeof backend)}
+              >
                 <option value="inherit">inherit</option>
                 <option value="local">local</option>
                 <option value="slurm">slurm</option>
@@ -163,7 +184,10 @@ export function SweepPage() {
             </label>
             <label className="field">
               <span>goal</span>
-              <select value={metricGoal} onChange={(event) => setMetricGoal(event.target.value as "maximize" | "minimize")}>
+              <select
+                value={metricGoal}
+                onChange={(event) => setMetricGoal(event.target.value as "maximize" | "minimize")}
+              >
                 <option value="maximize">maximize</option>
                 <option value="minimize">minimize</option>
               </select>
@@ -171,7 +195,13 @@ export function SweepPage() {
             {metricName === "mean_train_return_last_n" && (
               <label className="field">
                 <span>last N</span>
-                <input type="number" min={1} step={1} value={metricLastN} onChange={(event) => setMetricLastN(intValue(event.target.value, 1))} />
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={metricLastN}
+                  onChange={(event) => setMetricLastN(intValue(event.target.value, 1))}
+                />
               </label>
             )}
             <label className="field">
@@ -187,21 +217,45 @@ export function SweepPage() {
             </label>
             <label className="field">
               <span>seed count</span>
-              <input type="number" min={0} step={1} value={seedCount} onChange={(event) => setSeedCount(intValue(event.target.value, 0))} />
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={seedCount}
+                onChange={(event) => setSeedCount(intValue(event.target.value, 0))}
+              />
             </label>
             <label className="field">
               <span>seed start</span>
-              <input type="number" min={0} step={1} value={seedStart} onChange={(event) => setSeedStart(intValue(event.target.value, 0))} />
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={seedStart}
+                onChange={(event) => setSeedStart(intValue(event.target.value, 0))}
+              />
             </label>
             {method === "random" && (
               <>
                 <label className="field">
                   <span>trials</span>
-                  <input type="number" min={1} step={1} value={numTrials} onChange={(event) => setNumTrials(intValue(event.target.value, 1))} />
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={numTrials}
+                    onChange={(event) => setNumTrials(intValue(event.target.value, 1))}
+                  />
                 </label>
                 <label className="field">
                   <span>random seed</span>
-                  <input type="number" min={0} step={1} value={randomSeed} onChange={(event) => setRandomSeed(intValue(event.target.value, 0))} />
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={randomSeed}
+                    onChange={(event) => setRandomSeed(intValue(event.target.value, 0))}
+                  />
                 </label>
               </>
             )}
@@ -231,7 +285,9 @@ export function SweepPage() {
             )}
           </div>
           {(compile.error || run.error || candidates.error) && (
-            <div className="error-state">{(compile.error ?? run.error ?? candidates.error)?.message}</div>
+            <div className="error-state">
+              {(compile.error ?? run.error ?? candidates.error)?.message}
+            </div>
           )}
         </section>
 
@@ -257,7 +313,11 @@ export function SweepPage() {
                     <td>{formatCandidateValue(candidate.value)}</td>
                     <td>{valuesText(candidate.recommended_values)}</td>
                     <td>
-                      <button className="icon-button" onClick={() => addCandidate(candidate)} disabled={selectedTargets.has(candidate.target)}>
+                      <button
+                        className="icon-button"
+                        onClick={() => addCandidate(candidate)}
+                        disabled={selectedTargets.has(candidate.target)}
+                      >
                         <Plus size={16} />
                       </button>
                     </td>
@@ -276,13 +336,30 @@ export function SweepPage() {
                 <div className="sweep-param-row" key={parameter.target}>
                   <label className="field">
                     <span>label</span>
-                    <input value={parameter.label} onChange={(event) => updateSelected(parameter.target, { label: event.target.value })} />
+                    <input
+                      value={parameter.label}
+                      onChange={(event) =>
+                        updateSelected(parameter.target, { label: event.target.value })
+                      }
+                    />
                   </label>
                   <label className="field wide">
                     <span>{parameter.target}</span>
-                    <input value={parameter.valuesText} onChange={(event) => updateSelected(parameter.target, { valuesText: event.target.value })} />
+                    <input
+                      value={parameter.valuesText}
+                      onChange={(event) =>
+                        updateSelected(parameter.target, { valuesText: event.target.value })
+                      }
+                    />
                   </label>
-                  <button className="icon-button" onClick={() => setSelected((items) => items.filter((item) => item.target !== parameter.target))}>
+                  <button
+                    className="icon-button"
+                    onClick={() =>
+                      setSelected((items) =>
+                        items.filter((item) => item.target !== parameter.target),
+                      )
+                    }
+                  >
                     <X size={16} />
                   </button>
                 </div>
@@ -299,7 +376,13 @@ export function SweepPage() {
   );
 }
 
-function SweepResult({ compilation, run }: { compilation?: SweepCompilation; run?: SweepRunResponse }) {
+function SweepResult({
+  compilation,
+  run,
+}: {
+  compilation?: SweepCompilation;
+  run?: SweepRunResponse;
+}) {
   if (!compilation) return null;
   return (
     <section className="sweep-panel sweep-result">
@@ -376,7 +459,9 @@ function coerceValue(value: string, valueType: string): unknown {
 }
 
 function valuesText(values: unknown[]): string {
-  return values.map((value) => (typeof value === "string" ? value : JSON.stringify(value) ?? String(value))).join(", ");
+  return values
+    .map((value) => (typeof value === "string" ? value : (JSON.stringify(value) ?? String(value))))
+    .join(", ");
 }
 
 function intValue(value: string, fallback: number): number {

@@ -33,7 +33,10 @@ export function DatasetPage() {
           <Database size={20} />
           Dataset
         </h1>
-        <button onClick={() => inspect.mutate()} disabled={inspect.isPending || path.trim().length === 0}>
+        <button
+          onClick={() => inspect.mutate()}
+          disabled={inspect.isPending || path.trim().length === 0}
+        >
           <Search size={16} />
           Inspect
         </button>
@@ -73,7 +76,10 @@ export function DatasetPage() {
             <button className={tab === "preview" ? "active" : ""} onClick={() => setTab("preview")}>
               Preview
             </button>
-            <button className={tab === "visitation" ? "active" : ""} onClick={() => setTab("visitation")}>
+            <button
+              className={tab === "visitation" ? "active" : ""}
+              onClick={() => setTab("visitation")}
+            >
               Visitation
             </button>
           </div>
@@ -130,7 +136,10 @@ export function DatasetPage() {
                           <tr key={String(row.index)}>
                             <td>{String(row.index)}</td>
                             <td>
-                              <button className="icon-button" onClick={() => setSelectedPreviewIndex(rowIndex)}>
+                              <button
+                                className="icon-button"
+                                onClick={() => setSelectedPreviewIndex(rowIndex)}
+                              >
                                 <Eye size={16} />
                               </button>
                             </td>
@@ -145,7 +154,9 @@ export function DatasetPage() {
                     </table>
                   </div>
                 ) : (
-                  <div className="empty-state">This file is not a recognized transition dataset</div>
+                  <div className="empty-state">
+                    This file is not a recognized transition dataset
+                  </div>
                 )}
               </section>
               {dataset.is_transition_dataset && selectedPreview && (
@@ -184,7 +195,9 @@ export function DatasetPage() {
                   )}
                 </>
               ) : (
-                <div className="empty-state">No grid visitation map is available for this dataset</div>
+                <div className="empty-state">
+                  No grid visitation map is available for this dataset
+                </div>
               )}
             </div>
           )}
@@ -221,9 +234,15 @@ function SymbolicObservationPanel({ title, value }: { title: string; value: unkn
     <div className="symbolic-preview-panel">
       <div className="plot-header">
         <div className="panel-title">{title}</div>
-        <span className="source-count">{symbolic.wallColors.length ? `walls ${symbolic.wallColors.join(", ")}` : ""}</span>
+        <span className="source-count">
+          {symbolic.wallColors.length ? `walls ${symbolic.wallColors.join(", ")}` : ""}
+        </span>
       </div>
-      <svg viewBox={`0 0 ${symbolic.width * cell} ${symbolic.height * cell}`} className="symbolic-preview-svg" role="img">
+      <svg
+        viewBox={`0 0 ${symbolic.width * cell} ${symbolic.height * cell}`}
+        className="symbolic-preview-svg"
+        role="img"
+      >
         {symbolic.grid.map((row, rowIndex) =>
           row.map((cellValue, colIndex) => (
             <g key={`${rowIndex}-${colIndex}`}>
@@ -258,14 +277,17 @@ function SymbolicObservationPanel({ title, value }: { title: string; value: unkn
   );
 }
 
-function decodeSymbolicObservation(value: unknown):
-  | { grid: number[][][]; width: number; height: number; wallColors: number[] }
-  | null {
+function decodeSymbolicObservation(
+  value: unknown,
+): { grid: number[][][]; width: number; height: number; wallColors: number[] } | null {
   const raw = flattenNumbers(value);
   if (!raw.length || raw.length % 3 !== 0) return null;
   const side = Math.round(Math.sqrt(raw.length / 3));
   if (side * side * 3 !== raw.length) return null;
-  const scaled = Math.max(...raw) <= 1 ? raw.map((item) => Math.round(item * 255)) : raw.map((item) => Math.round(item));
+  const scaled =
+    Math.max(...raw) <= 1
+      ? raw.map((item) => Math.round(item * 255))
+      : raw.map((item) => Math.round(item));
   const grid: number[][][] = [];
   let hasPlayer = false;
   const wallColors = new Set<number>();
@@ -281,7 +303,12 @@ function decodeSymbolicObservation(value: unknown):
     grid.push(gridRow);
   }
   if (!hasPlayer && !wallColors.size) return null;
-  return { grid, width: side, height: side, wallColors: [...wallColors].sort((a, b) => a - b).slice(0, 12) };
+  return {
+    grid,
+    width: side,
+    height: side,
+    wallColors: [...wallColors].sort((a, b) => a - b).slice(0, 12),
+  };
 }
 
 function flattenNumbers(value: unknown): number[] {

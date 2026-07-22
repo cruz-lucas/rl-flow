@@ -10,12 +10,15 @@ interface ComponentPaletteProps {
 
 export function ComponentPalette({ components, isLoading, error }: ComponentPaletteProps) {
   const [collapsedSources, setCollapsedSources] = useState<Record<string, boolean>>({});
-  const groups = components.reduce<Record<string, Record<string, ComponentSpec[]>>>((acc, component) => {
-    const source = component.source ?? "custom";
-    acc[source] = acc[source] ?? {};
-    acc[source][component.kind] = [...(acc[source][component.kind] ?? []), component];
-    return acc;
-  }, {});
+  const groups = components.reduce<Record<string, Record<string, ComponentSpec[]>>>(
+    (acc, component) => {
+      const source = component.source ?? "custom";
+      acc[source] = acc[source] ?? {};
+      acc[source][component.kind] = [...(acc[source][component.kind] ?? []), component];
+      return acc;
+    },
+    {},
+  );
   const groupEntries = Object.entries(groups).sort(([left], [right]) => left.localeCompare(right));
 
   const toggleSource = (source: string) => {
@@ -27,10 +30,15 @@ export function ComponentPalette({ components, isLoading, error }: ComponentPale
       <div className="panel-title">Components</div>
       {isLoading && <div className="empty-state">Loading components</div>}
       {error && <div className="error-state">Could not load components from the API</div>}
-      {!isLoading && !error && components.length === 0 && <div className="empty-state">No components registered</div>}
+      {!isLoading && !error && components.length === 0 && (
+        <div className="empty-state">No components registered</div>
+      )}
       {groupEntries.map(([source, kindGroups]) => {
         const isCollapsed = collapsedSources[source] ?? false;
-        const sourceCount = Object.values(kindGroups).reduce((count, items) => count + items.length, 0);
+        const sourceCount = Object.values(kindGroups).reduce(
+          (count, items) => count + items.length,
+          0,
+        );
         return (
           <section key={source} className="palette-group">
             <button
@@ -68,7 +76,7 @@ export function ComponentPalette({ components, isLoading, error }: ComponentPale
                     ))}
                   </div>
                 ))}
-        </section>
+          </section>
         );
       })}
     </aside>

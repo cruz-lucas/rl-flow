@@ -23,7 +23,10 @@ describe("SchemaForm", () => {
     const onChange = vi.fn();
     render(
       <SchemaForm
-        schema={{ type: "object", properties: { max_steps: { type: ["integer", "null"], minimum: 1 } } }}
+        schema={{
+          type: "object",
+          properties: { max_steps: { type: ["integer", "null"], minimum: 1 } },
+        }}
         value={{ max_steps: null }}
         onChange={onChange}
       />,

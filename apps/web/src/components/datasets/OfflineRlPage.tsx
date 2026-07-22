@@ -55,7 +55,8 @@ export function OfflineRlPage() {
         intrinsic_reward_scale: intrinsicRewardScale,
         intrinsic_stats_decay: intrinsicStatsDecay,
         intrinsic_reward_epsilon: intrinsicRewardEpsilon,
-        intrinsic_reward_clip: intrinsicRewardClip.trim() === "" ? null : Number(intrinsicRewardClip),
+        intrinsic_reward_clip:
+          intrinsicRewardClip.trim() === "" ? null : Number(intrinsicRewardClip),
         intrinsic_reward_center: intrinsicRewardCenter,
         max_grad_norm: maxGradNorm,
         seed,
@@ -76,8 +77,10 @@ export function OfflineRlPage() {
   const result = analysis.data;
   const activeAlgorithm = result?.algorithm ?? algorithm;
   const algorithmLabel = algorithmLabels[activeAlgorithm] ?? activeAlgorithm;
-  const learnedValueLabel = activeAlgorithm === "classifier" ? "Unknown Probability" : "learned bonus";
-  const learnedPlotLabel = activeAlgorithm === "classifier" ? "Classifier Unknown Probability" : `${algorithmLabel} Bonus`;
+  const learnedValueLabel =
+    activeAlgorithm === "classifier" ? "Unknown Probability" : "learned bonus";
+  const learnedPlotLabel =
+    activeAlgorithm === "classifier" ? "Classifier Unknown Probability" : `${algorithmLabel} Bonus`;
   return (
     <main className="page offline-page">
       <div className="page-header">
@@ -85,7 +88,10 @@ export function OfflineRlPage() {
           <Brain size={20} />
           Offline RL
         </h1>
-        <button onClick={() => analysis.mutate()} disabled={analysis.isPending || path.trim().length === 0}>
+        <button
+          onClick={() => analysis.mutate()}
+          disabled={analysis.isPending || path.trim().length === 0}
+        >
           <Play size={16} />
           Run {algorithmLabels[algorithm]}
         </button>
@@ -108,7 +114,10 @@ export function OfflineRlPage() {
         </label>
         <label className="field">
           <span>algorithm</span>
-          <select value={algorithm} onChange={(event) => setAlgorithm(event.target.value as OfflineAlgorithm)}>
+          <select
+            value={algorithm}
+            onChange={(event) => setAlgorithm(event.target.value as OfflineAlgorithm)}
+          >
             <option value="rnd">RND</option>
             <option value="cfn">CFN</option>
             <option value="classifier">Known/Unknown Classifier</option>
@@ -117,7 +126,10 @@ export function OfflineRlPage() {
         </label>
         <label className="field">
           <span>granularity</span>
-          <select value={granularity} onChange={(event) => setGranularity(event.target.value as Granularity)}>
+          <select
+            value={granularity}
+            onChange={(event) => setGranularity(event.target.value as Granularity)}
+          >
             <option value="state">State</option>
             <option value="state_action">State-Action</option>
           </select>
@@ -161,7 +173,10 @@ export function OfflineRlPage() {
         </label>
         <label className="field">
           <span>activation</span>
-          <select value={activation} onChange={(event) => setActivation(event.target.value as Activation)}>
+          <select
+            value={activation}
+            onChange={(event) => setActivation(event.target.value as Activation)}
+          >
             <option value="relu">relu</option>
             <option value="tanh">tanh</option>
             <option value="gelu">gelu</option>
@@ -171,7 +186,10 @@ export function OfflineRlPage() {
         </label>
         <label className="field">
           <span>optimizer</span>
-          <select value={optimizer} onChange={(event) => setOptimizer(event.target.value as Optimizer)}>
+          <select
+            value={optimizer}
+            onChange={(event) => setOptimizer(event.target.value as Optimizer)}
+          >
             <option value="adam">adam</option>
             <option value="sgd">sgd</option>
             <option value="rmsprop">rmsprop</option>
@@ -243,7 +261,10 @@ export function OfflineRlPage() {
         </label>
         <label className="field">
           <span>reward clip</span>
-          <input value={intrinsicRewardClip} onChange={(event) => setIntrinsicRewardClip(event.target.value)} />
+          <input
+            value={intrinsicRewardClip}
+            onChange={(event) => setIntrinsicRewardClip(event.target.value)}
+          />
         </label>
         <label className="field checkbox-field">
           <span>center reward</span>
@@ -277,7 +298,10 @@ export function OfflineRlPage() {
           <>
             <label className="field">
               <span>simhash mode</span>
-              <select value={simhashMode} onChange={(event) => setSimhashMode(event.target.value as SimHashMode)}>
+              <select
+                value={simhashMode}
+                onChange={(event) => setSimhashMode(event.target.value as SimHashMode)}
+              >
                 <option value="static">static</option>
                 <option value="learned">learned</option>
               </select>
@@ -300,7 +324,9 @@ export function OfflineRlPage() {
                 min={1}
                 step={1}
                 value={simhashTableSize}
-                onChange={(event) => setSimhashTableSize(Number.parseInt(event.target.value, 10) || 1)}
+                onChange={(event) =>
+                  setSimhashTableSize(Number.parseInt(event.target.value, 10) || 1)
+                }
               />
             </label>
             <label className="field">

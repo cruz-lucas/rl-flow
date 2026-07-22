@@ -66,11 +66,18 @@ export function StateHeatmap({
   return (
     <section className="heatmap-panel">
       <PlotHeader title={title} svgRef={svgRef} />
-      <svg ref={svgRef} className="heatmap-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title}>
+      <svg
+        ref={svgRef}
+        className="heatmap-svg"
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={title}
+      >
         {values.map((row, rowIndex) =>
           row.map((value, colIndex) => {
             const valid = validMask?.[rowIndex]?.[colIndex] ?? true;
-            const fill = valid && value !== null ? colorForValue(Number(value), domain, palette) : "#ffffff";
+            const fill =
+              valid && value !== null ? colorForValue(Number(value), domain, palette) : "#ffffff";
             const label = value === null ? "" : formatValue(Number(value));
             return (
               <g key={`${rowIndex}-${colIndex}`}>
@@ -123,14 +130,21 @@ export function ActionHeatmap({
   return (
     <section className="heatmap-panel">
       <PlotHeader title={title} svgRef={svgRef} />
-      <svg ref={svgRef} className="heatmap-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title}>
+      <svg
+        ref={svgRef}
+        className="heatmap-svg"
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={title}
+      >
         {values.map((row, rowIndex) =>
           row.map((actions, colIndex) => {
             const valid = validMask?.[rowIndex]?.[colIndex] ?? true;
             const polygons = cellPolygons(rowIndex, colIndex);
             return polygons.map((points, actionIndex) => {
               const value = actions[actionIndex] ?? null;
-              const fill = valid && value !== null ? colorForValue(Number(value), domain, palette) : "#ffffff";
+              const fill =
+                valid && value !== null ? colorForValue(Number(value), domain, palette) : "#ffffff";
               const label = value === null ? "" : formatValue(Number(value));
               return (
                 <polygon
@@ -141,8 +155,9 @@ export function ActionHeatmap({
                   strokeWidth={0.014}
                 >
                   <title>
-                    row {rowIndex}, col {colIndex}, {actionLabels[actionIndex] ?? `action ${actionIndex}`}:{" "}
-                    {label || "empty"} {valueLabel}
+                    row {rowIndex}, col {colIndex},{" "}
+                    {actionLabels[actionIndex] ?? `action ${actionIndex}`}: {label || "empty"}{" "}
+                    {valueLabel}
                   </title>
                 </polygon>
               );
@@ -193,8 +208,20 @@ export function BonusScatter({
   return (
     <section className="heatmap-panel">
       <PlotHeader title={title} svgRef={svgRef} />
-      <svg ref={svgRef} className="scatter-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title}>
-        <line x1={margin.left} y1={margin.top} x2={margin.left} y2={margin.top + plotHeight} stroke="#64748b" />
+      <svg
+        ref={svgRef}
+        className="scatter-svg"
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={title}
+      >
+        <line
+          x1={margin.left}
+          y1={margin.top}
+          x2={margin.left}
+          y2={margin.top + plotHeight}
+          stroke="#64748b"
+        />
         <line
           x1={margin.left}
           y1={margin.top + plotHeight}
@@ -223,11 +250,18 @@ export function BonusScatter({
             fillOpacity={0.62}
           >
             <title>
-              count {point.count}, count bonus {formatValue(point.count_bonus)}, learned {formatValue(point.learned_bonus)}
+              count {point.count}, count bonus {formatValue(point.count_bonus)}, learned{" "}
+              {formatValue(point.learned_bonus)}
             </title>
           </circle>
         ))}
-        <text x={margin.left + plotWidth / 2} y={height - 8} textAnchor="middle" fontSize={11} fill="#475569">
+        <text
+          x={margin.left + plotWidth / 2}
+          y={height - 8}
+          textAnchor="middle"
+          fontSize={11}
+          fill="#475569"
+        >
           count-based bonus
         </text>
         <text
@@ -263,7 +297,10 @@ function flattenValues(values: ValueMatrix | number[][], validMask?: boolean[][]
   );
 }
 
-function flattenActionValues(values: ActionValueMatrix | number[][][], validMask?: boolean[][]): number[] {
+function flattenActionValues(
+  values: ActionValueMatrix | number[][][],
+  validMask?: boolean[][],
+): number[] {
   const flattened: number[] = [];
   values.forEach((row, rowIndex) => {
     row.forEach((actions, colIndex) => {
@@ -285,7 +322,11 @@ function valueDomain(values: number[]): { min: number; max: number } {
   return { min, max };
 }
 
-function colorForValue(value: number, domain: { min: number; max: number }, palette: "count" | "bonus"): string {
+function colorForValue(
+  value: number,
+  domain: { min: number; max: number },
+  palette: "count" | "bonus",
+): string {
   const raw = (value - domain.min) / (domain.max - domain.min);
   const t = Math.max(0, Math.min(1, palette === "count" ? Math.sqrt(raw) : raw));
   const stops = VIRIDIS_STOPS;
@@ -366,13 +407,7 @@ function Legend({
   );
 }
 
-function PlotHeader({
-  title,
-  svgRef,
-}: {
-  title: string;
-  svgRef: RefObject<SVGSVGElement>;
-}) {
+function PlotHeader({ title, svgRef }: { title: string; svgRef: RefObject<SVGSVGElement> }) {
   return (
     <div className="plot-header">
       <div className="panel-title">{title}</div>

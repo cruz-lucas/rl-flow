@@ -65,10 +65,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ workflow, workflow_id: workflowId }),
     }),
-  loadWorkflow: (workflowId: string) => request<WorkflowSpec>(`/workflows/${encodeURIComponent(workflowId)}`),
+  loadWorkflow: (workflowId: string) =>
+    request<WorkflowSpec>(`/workflows/${encodeURIComponent(workflowId)}`),
   exampleWorkflow: (name: string) => request<WorkflowSpec>(`/workflows/examples/${name}`),
   validateWorkflow: (workflow: WorkflowSpec) =>
-    request<ValidationResult>("/workflows/validate", { method: "POST", body: JSON.stringify(workflow) }),
+    request<ValidationResult>("/workflows/validate", {
+      method: "POST",
+      body: JSON.stringify(workflow),
+    }),
   compileWorkflow: (workflow: WorkflowSpec) =>
     request<ExperimentSpec>("/workflows/compile", {
       method: "POST",
@@ -84,7 +88,11 @@ export const api = {
   experiments: () => request<Array<Record<string, unknown>>>("/experiments"),
   experimentResults: () => request<ExperimentResult[]>("/experiments/results"),
   artifacts: (experimentId: string) => request<string[]>(`/artifacts/${experimentId}`),
-  createEnvironmentSession: (payload: { component_id: string; config: Record<string, unknown>; seed: number }) =>
+  createEnvironmentSession: (payload: {
+    component_id: string;
+    config: Record<string, unknown>;
+    seed: number;
+  }) =>
     request<EnvironmentSessionSnapshot>("/environment-sessions", {
       method: "POST",
       body: JSON.stringify(payload),
@@ -95,7 +103,9 @@ export const api = {
       body: JSON.stringify({ action }),
     }),
   resetEnvironmentSession: (sessionId: string) =>
-    request<EnvironmentSessionSnapshot>(`/environment-sessions/${sessionId}/reset`, { method: "POST" }),
+    request<EnvironmentSessionSnapshot>(`/environment-sessions/${sessionId}/reset`, {
+      method: "POST",
+    }),
   exportEnvironmentPdf: (sessionId: string) =>
     requestBlob(`/environment-sessions/${sessionId}/export.pdf`, { method: "GET" }),
   datasets: () => request<DatasetListItem[]>("/datasets"),
@@ -135,7 +145,9 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   sweepCandidates: (workflowId: string) =>
-    request<SweepCandidateResponse>(`/sweeps/workflows/${encodeURIComponent(workflowId)}/candidates`),
+    request<SweepCandidateResponse>(
+      `/sweeps/workflows/${encodeURIComponent(workflowId)}/candidates`,
+    ),
   sweeps: () => request<SweepListItem[]>("/sweeps"),
   compileSweep: (payload: SweepBuildRequest) =>
     request<SweepCompilation>("/sweeps/compile", {

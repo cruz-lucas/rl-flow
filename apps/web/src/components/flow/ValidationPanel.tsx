@@ -1,4 +1,4 @@
-import { Check, Play, Send, Terminal, Upload } from "lucide-react";
+import { Check, Play, Terminal, Upload } from "lucide-react";
 import type { ExperimentSpec, ValidationResult } from "../../types/schema";
 import { useFlowStore } from "../../stores/flowStore";
 
@@ -32,10 +32,16 @@ export function ValidationPanel({
           Compile
         </button>
         <div className="segmented" aria-label="Execution backend">
-          <button className={backend === "local" ? "active" : ""} onClick={() => setBackend("local")}>
+          <button
+            className={backend === "local" ? "active" : ""}
+            onClick={() => setBackend("local")}
+          >
             local
           </button>
-          <button className={backend === "slurm" ? "active" : ""} onClick={() => setBackend("slurm")}>
+          <button
+            className={backend === "slurm" ? "active" : ""}
+            onClick={() => setBackend("slurm")}
+          >
             slurm
           </button>
         </div>
@@ -60,11 +66,7 @@ export function ValidationPanel({
             ))}
           </ul>
         )}
-        {experiment && (
-          <code>
-            {experiment.command}
-          </code>
-        )}
+        {experiment && <code>{experiment.command}</code>}
       </div>
     </footer>
   );

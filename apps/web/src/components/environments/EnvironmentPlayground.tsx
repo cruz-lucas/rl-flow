@@ -12,19 +12,32 @@ interface EnvironmentPlaygroundProps {
 
 export function EnvironmentPlayground({ components, isLoading }: EnvironmentPlaygroundProps) {
   const renderableEnvironments = useMemo(
-    () => components.filter((component) => component.kind === "environment" && component.id === "navix.env.grid"),
+    () =>
+      components.filter(
+        (component) => component.kind === "environment" && component.id === "navix.env.grid",
+      ),
     [components],
   );
   const [componentId, setComponentId] = useState("navix.env.grid");
-  const selected = renderableEnvironments.find((component) => component.id === componentId) ?? renderableEnvironments[0];
+  const selected =
+    renderableEnvironments.find((component) => component.id === componentId) ??
+    renderableEnvironments[0];
   const [config, setConfig] = useState<Record<string, unknown>>({});
   const [seed, setSeed] = useState(0);
   const [snapshot, setSnapshot] = useState<EnvironmentSessionSnapshot>();
 
-  const resolvedConfig = useMemo(() => ({ ...(selected?.defaults ?? {}), ...config }), [selected, config]);
+  const resolvedConfig = useMemo(
+    () => ({ ...(selected?.defaults ?? {}), ...config }),
+    [selected, config],
+  );
 
   const load = useMutation({
-    mutationFn: () => api.createEnvironmentSession({ component_id: selected?.id ?? componentId, config: resolvedConfig, seed }),
+    mutationFn: () =>
+      api.createEnvironmentSession({
+        component_id: selected?.id ?? componentId,
+        config: resolvedConfig,
+        seed,
+      }),
     onSuccess: setSnapshot,
   });
   const step = useMutation({
@@ -100,7 +113,11 @@ export function EnvironmentPlayground({ components, isLoading }: EnvironmentPlay
                 onChange={(event) => setSeed(Number.parseInt(event.target.value, 10) || 0)}
               />
             </label>
-            <SchemaForm schema={selected.config_schema} value={resolvedConfig} onChange={setConfig} />
+            <SchemaForm
+              schema={selected.config_schema}
+              value={resolvedConfig}
+              onChange={setConfig}
+            />
           </>
         )}
         {snapshot && (
@@ -124,7 +141,11 @@ export function EnvironmentPlayground({ components, isLoading }: EnvironmentPlay
               <dl>
                 <div>
                   <dt>shape</dt>
-                  <dd>{snapshot.observation_shape.length ? `[${snapshot.observation_shape.join(", ")}]` : "scalar"}</dd>
+                  <dd>
+                    {snapshot.observation_shape.length
+                      ? `[${snapshot.observation_shape.join(", ")}]`
+                      : "scalar"}
+                  </dd>
                 </div>
                 <div>
                   <dt>dtype</dt>
@@ -142,7 +163,11 @@ export function EnvironmentPlayground({ components, isLoading }: EnvironmentPlay
         <div className="environment-toolbar">
           <div className="action-row">
             {snapshot?.action_labels.map((label, action) => (
-              <button key={`${label}-${action}`} onClick={() => step.mutate(action)} disabled={isBusy}>
+              <button
+                key={`${label}-${action}`}
+                onClick={() => step.mutate(action)}
+                disabled={isBusy}
+              >
                 {label}
               </button>
             ))}

@@ -32,10 +32,21 @@ function CanvasInner({ components }: { components: ComponentSpec[] }) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const reactFlow = useReactFlow();
   const { nodes, edges, setNodes, setEdges, setSelectedNodeId, addComponent } = useFlowStore();
-  const componentById = useMemo(() => new Map(components.map((component) => [component.id, component])), [components]);
+  const componentById = useMemo(
+    () => new Map(components.map((component) => [component.id, component])),
+    [components],
+  );
 
   const onConnect = (connection: Connection) => {
-    setEdges(addEdge({ ...connection, id: `${connection.source}-${connection.sourceHandle}-${connection.target}-${connection.targetHandle}` }, edges));
+    setEdges(
+      addEdge(
+        {
+          ...connection,
+          id: `${connection.source}-${connection.sourceHandle}-${connection.target}-${connection.targetHandle}`,
+        },
+        edges,
+      ),
+    );
   };
 
   return (
@@ -52,7 +63,10 @@ function CanvasInner({ components }: { components: ComponentSpec[] }) {
         const component = componentById.get(componentId);
         if (!component || !wrapperRef.current) return;
         const bounds = wrapperRef.current.getBoundingClientRect();
-        const position = reactFlow.project({ x: event.clientX - bounds.left, y: event.clientY - bounds.top });
+        const position = reactFlow.project({
+          x: event.clientX - bounds.left,
+          y: event.clientY - bounds.top,
+        });
         addComponent(component, position);
       }}
     >

@@ -2,7 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Download, FlaskConical, LineChart, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/client";
-import type { ExperimentHistoryPoint, ExperimentResult, SweepGroupSummary, SweepSummary } from "../../types/schema";
+import type {
+  ExperimentHistoryPoint,
+  ExperimentResult,
+  SweepGroupSummary,
+  SweepSummary,
+} from "../../types/schema";
 
 type MetricGoal = "maximize" | "minimize";
 type RunOptionKind = "run" | "sweep_group" | "sweep_trial";
@@ -22,7 +27,16 @@ type PlotSeries = {
   band: Array<{ x: number; yLow: number; yHigh: number }>;
 };
 
-const plotColors = ["#0072b2", "#d55e00", "#009e73", "#cc79a7", "#6b4c9a", "#8a6d00", "#56b4e9", "#111827"];
+const plotColors = [
+  "#0072b2",
+  "#d55e00",
+  "#009e73",
+  "#cc79a7",
+  "#6b4c9a",
+  "#8a6d00",
+  "#56b4e9",
+  "#111827",
+];
 
 export function ExperimentDetail() {
   const results = useQuery({ queryKey: ["experiment-results"], queryFn: api.experimentResults });
@@ -37,9 +51,15 @@ export function ExperimentDetail() {
   const [metricLastN, setMetricLastN] = useState(50);
 
   const runOptions = useMemo(() => buildRunOptions(results.data ?? []), [results.data]);
-  const runOptionMap = useMemo(() => new Map(runOptions.map((option) => [option.id, option])), [runOptions]);
+  const runOptionMap = useMemo(
+    () => new Map(runOptions.map((option) => [option.id, option])),
+    [runOptions],
+  );
   const selectedRunOptions = useMemo(
-    () => selectedRunIds.map((id) => runOptionMap.get(id)).filter((option): option is RunOption => Boolean(option)),
+    () =>
+      selectedRunIds
+        .map((id) => runOptionMap.get(id))
+        .filter((option): option is RunOption => Boolean(option)),
     [runOptionMap, selectedRunIds],
   );
   const filteredRunOptions = useMemo(
@@ -110,11 +130,18 @@ export function ExperimentDetail() {
           <div className="run-add-controls">
             <label className="field wide">
               <span>search runs</span>
-              <input value={runSearch} onChange={(event) => setRunSearch(event.target.value)} placeholder="group, trial, seed, parameter, path" />
+              <input
+                value={runSearch}
+                onChange={(event) => setRunSearch(event.target.value)}
+                placeholder="group, trial, seed, parameter, path"
+              />
             </label>
             <label className="field wide">
               <span>match</span>
-              <select value={runCandidateId} onChange={(event) => setRunCandidateId(event.target.value)}>
+              <select
+                value={runCandidateId}
+                onChange={(event) => setRunCandidateId(event.target.value)}
+              >
                 <option value="">No matches</option>
                 {filteredRunOptions.map((option) => (
                   <option key={option.id} value={option.id}>
@@ -142,11 +169,15 @@ export function ExperimentDetail() {
           {runOptions.length === 0 ? (
             <div className="empty-state">No run results</div>
           ) : selectedRunOptions.length === 0 ? (
-            <div className="empty-state">Add runs, sweep groups, or individual trials to compare</div>
+            <div className="empty-state">
+              Add runs, sweep groups, or individual trials to compare
+            </div>
           ) : (
             <RunResults
               options={selectedRunOptions}
-              onRemove={(id) => setSelectedRunIds((ids) => ids.filter((selectedId) => selectedId !== id))}
+              onRemove={(id) =>
+                setSelectedRunIds((ids) => ids.filter((selectedId) => selectedId !== id))
+              }
             />
           )}
         </section>
@@ -177,7 +208,10 @@ export function ExperimentDetail() {
             </label>
             <label className="field">
               <span>goal</span>
-              <select value={metricGoal} onChange={(event) => setMetricGoal(event.target.value as MetricGoal)}>
+              <select
+                value={metricGoal}
+                onChange={(event) => setMetricGoal(event.target.value as MetricGoal)}
+              >
                 <option value="maximize">maximize</option>
                 <option value="minimize">minimize</option>
               </select>
@@ -185,11 +219,19 @@ export function ExperimentDetail() {
             {metricName === "mean_train_return_last_n" && (
               <label className="field">
                 <span>last N</span>
-                <input type="number" min={1} step={1} value={metricLastN} onChange={(event) => setMetricLastN(intValue(event.target.value, 1))} />
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={metricLastN}
+                  onChange={(event) => setMetricLastN(intValue(event.target.value, 1))}
+                />
               </label>
             )}
           </div>
-          {(sweeps.error || sweepSummary.error) && <div className="error-state">{(sweeps.error ?? sweepSummary.error)?.message}</div>}
+          {(sweeps.error || sweepSummary.error) && (
+            <div className="error-state">{(sweeps.error ?? sweepSummary.error)?.message}</div>
+          )}
           {!sweepPath ? (
             <div className="empty-state">No sweep results</div>
           ) : (
@@ -201,7 +243,13 @@ export function ExperimentDetail() {
   );
 }
 
-function RunResults({ options, onRemove }: { options: RunOption[]; onRemove: (id: string) => void }) {
+function RunResults({
+  options,
+  onRemove,
+}: {
+  options: RunOption[];
+  onRemove: (id: string) => void;
+}) {
   const trainSeries = comparisonSeries(options, "train", "return", "env_step");
   const lossSeries = comparisonSeries(options, "train", "loss", "env_step");
   const evalSeries = comparisonSeries(options, "eval", "return", "env_step");
@@ -212,7 +260,9 @@ function RunResults({ options, onRemove }: { options: RunOption[]; onRemove: (id
           <h2>Run Comparison</h2>
           <span>{options.length} selected</span>
         </div>
-        <span className="status-pill">{options.length === 1 ? optionTypeLabel(options[0]) : "compare"}</span>
+        <span className="status-pill">
+          {options.length === 1 ? optionTypeLabel(options[0]) : "compare"}
+        </span>
       </div>
       <MetricStrip
         metrics={[
@@ -223,14 +273,42 @@ function RunResults({ options, onRemove }: { options: RunOption[]; onRemove: (id
         ]}
       />
       <RunComparisonTable options={options} onRemove={onRemove} />
-      <MultiLinePlot id="train-return-plot" title="Training Return" xLabel="Environment Steps" yLabel="Return" series={trainSeries} />
-      {lossSeries.length > 0 && <MultiLinePlot id="train-loss-plot" title="Training Loss" xLabel="Environment Steps" yLabel="Loss" series={lossSeries} />}
-      {evalSeries.length > 0 && <MultiLinePlot id="eval-return-plot" title="Evaluation Return" xLabel="Environment Steps" yLabel="Return" series={evalSeries} />}
+      <MultiLinePlot
+        id="train-return-plot"
+        title="Training Return"
+        xLabel="Environment Steps"
+        yLabel="Return"
+        series={trainSeries}
+      />
+      {lossSeries.length > 0 && (
+        <MultiLinePlot
+          id="train-loss-plot"
+          title="Training Loss"
+          xLabel="Environment Steps"
+          yLabel="Loss"
+          series={lossSeries}
+        />
+      )}
+      {evalSeries.length > 0 && (
+        <MultiLinePlot
+          id="eval-return-plot"
+          title="Evaluation Return"
+          xLabel="Environment Steps"
+          yLabel="Return"
+          series={evalSeries}
+        />
+      )}
     </>
   );
 }
 
-function RunComparisonTable({ options, onRemove }: { options: RunOption[]; onRemove: (id: string) => void }) {
+function RunComparisonTable({
+  options,
+  onRemove,
+}: {
+  options: RunOption[];
+  onRemove: (id: string) => void;
+}) {
   return (
     <div className="table-scroll comparison-table">
       <table className="data-table">
@@ -251,14 +329,20 @@ function RunComparisonTable({ options, onRemove }: { options: RunOption[]; onRem
           {options.map((option) => (
             <tr key={option.id}>
               <td>
-                <button className="icon-button" onClick={() => onRemove(option.id)} aria-label={`Remove ${option.label}`}>
+                <button
+                  className="icon-button"
+                  onClick={() => onRemove(option.id)}
+                  aria-label={`Remove ${option.label}`}
+                >
                   <X size={14} />
                 </button>
               </td>
               <td>
                 <strong>{shortRunLabel(option)}</strong>
                 <span className="muted-line">{option.run.workflow_name}</span>
-                {option.run.sweep_id && <span className="muted-line">{sweepFolderName(option.run)}</span>}
+                {option.run.sweep_id && (
+                  <span className="muted-line">{sweepFolderName(option.run)}</span>
+                )}
               </td>
               <td>{optionTypeLabel(option)}</td>
               <td>{statusLabel(option.groupRuns)}</td>
@@ -266,7 +350,9 @@ function RunComparisonTable({ options, onRemove }: { options: RunOption[]; onRem
               <td>{formatMetric(metricMean(option.groupRuns, "mean_train_return"))}</td>
               <td>{formatMetric(metricMean(option.groupRuns, "mean_train_return_last_10"))}</td>
               <td>{formatMetric(metricMean(option.groupRuns, "mean_eval_return"))}</td>
-              <td>{formatParameters(option.run.sweep_group_parameters ?? option.run.sweep_parameters)}</td>
+              <td>
+                {formatParameters(option.run.sweep_group_parameters ?? option.run.sweep_parameters)}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -275,7 +361,13 @@ function RunComparisonTable({ options, onRemove }: { options: RunOption[]; onRem
   );
 }
 
-function SweepResults({ summary, experimentResults }: { summary?: SweepSummary; experimentResults: ExperimentResult[] }) {
+function SweepResults({
+  summary,
+  experimentResults,
+}: {
+  summary?: SweepSummary;
+  experimentResults: ExperimentResult[];
+}) {
   if (!summary) return <div className="empty-state">Select a completed sweep</div>;
   const bestRuns = runsForBestGroup(summary, experimentResults);
   return (
@@ -324,7 +416,13 @@ function SweepResults({ summary, experimentResults }: { summary?: SweepSummary; 
   );
 }
 
-function BestGroupLearningCurve({ summary, runs }: { summary: SweepSummary; runs: ExperimentResult[] }) {
+function BestGroupLearningCurve({
+  summary,
+  runs,
+}: {
+  summary: SweepSummary;
+  runs: ExperimentResult[];
+}) {
   if (!summary.best || runs.length === 0) return null;
   const series = seriesFromRuns({
     id: `best:${summary.best.group_id}`,
@@ -339,7 +437,15 @@ function BestGroupLearningCurve({ summary, runs }: { summary: SweepSummary; runs
     runs.length > 1
       ? `Best Group ${summary.best.group_id} Training Return Mean`
       : `Best Group ${summary.best.group_id} Training Return`;
-  return <MultiLinePlot id="best-group-train-return-plot" title={title} xLabel="Episode" yLabel="Return" series={[series]} />;
+  return (
+    <MultiLinePlot
+      id="best-group-train-return-plot"
+      title={title}
+      xLabel="Episode"
+      yLabel="Return"
+      series={[series]}
+    />
+  );
 }
 
 function MetricStrip({ metrics }: { metrics: Array<[string, unknown]> }) {
@@ -352,59 +458,6 @@ function MetricStrip({ metrics }: { metrics: Array<[string, unknown]> }) {
         </div>
       ))}
     </div>
-  );
-}
-
-function LinePlot({
-  id,
-  title,
-  xLabel,
-  yLabel,
-  points,
-}: {
-  id: string;
-  title: string;
-  xLabel: string;
-  yLabel: string;
-  points: Array<{ x: number; y: number }>;
-}) {
-  if (points.length === 0) return null;
-  const frame = plotFrame(points);
-  const polyline = points.map((point) => `${xScale(point.x, frame)},${yScale(point.y, frame)}`).join(" ");
-  const clipId = `${id}-clip`;
-  return (
-    <figure className="publication-plot">
-      <div className="plot-header">
-        <div className="plot-title">
-          <LineChart size={16} />
-          {title}
-        </div>
-        <button onClick={() => downloadSvg(id, `${id}.svg`)}>
-          <Download size={14} />
-          SVG
-        </button>
-      </div>
-      <svg id={id} viewBox={`0 0 ${frame.width} ${frame.height}`} role="img" aria-label={title} fontFamily="Inter, Arial, sans-serif">
-        <defs>
-          <clipPath id={clipId}>
-            <rect x={frame.margin.left} y={frame.margin.top} width={plotWidth(frame)} height={plotHeight(frame)} />
-          </clipPath>
-        </defs>
-        <PlotAxes frame={frame} xLabel={xLabel} yLabel={yLabel} />
-        <text x={frame.width / 2} y="24" textAnchor="middle" fontSize="15" fontWeight="700" fill="#111827">
-          {title}
-        </text>
-        <polyline
-          points={polyline}
-          clipPath={`url(#${clipId})`}
-          fill="none"
-          stroke={plotColors[0]}
-          strokeWidth="2.6"
-          strokeLinejoin="round"
-          strokeLinecap="round"
-        />
-      </svg>
-    </figure>
   );
 }
 
@@ -443,14 +496,32 @@ function MultiLinePlot({
           SVG
         </button>
       </div>
-      <svg id={id} viewBox={`0 0 ${frame.width} ${frame.height}`} role="img" aria-label={title} fontFamily="Inter, Arial, sans-serif">
+      <svg
+        id={id}
+        viewBox={`0 0 ${frame.width} ${frame.height}`}
+        role="img"
+        aria-label={title}
+        fontFamily="Inter, Arial, sans-serif"
+      >
         <defs>
           <clipPath id={clipId}>
-            <rect x={frame.margin.left} y={frame.margin.top} width={plotWidth(frame)} height={plotHeight(frame)} />
+            <rect
+              x={frame.margin.left}
+              y={frame.margin.top}
+              width={plotWidth(frame)}
+              height={plotHeight(frame)}
+            />
           </clipPath>
         </defs>
         <PlotAxes frame={frame} xLabel={xLabel} yLabel={yLabel} />
-        <text x={frame.width / 2} y="24" textAnchor="middle" fontSize="15" fontWeight="700" fill="#111827">
+        <text
+          x={frame.width / 2}
+          y="24"
+          textAnchor="middle"
+          fontSize="15"
+          fontWeight="700"
+          fill="#111827"
+        >
           {title}
         </text>
         {visibleSeries.map((item) =>
@@ -467,7 +538,9 @@ function MultiLinePlot({
         {visibleSeries.map((item) => (
           <polyline
             key={item.id}
-            points={item.points.map((point) => `${xScale(point.x, frame)},${yScale(point.y, frame)}`).join(" ")}
+            points={item.points
+              .map((point) => `${xScale(point.x, frame)},${yScale(point.y, frame)}`)
+              .join(" ")}
             clipPath={`url(#${clipId})`}
             fill="none"
             stroke={item.color}
@@ -483,7 +556,9 @@ function MultiLinePlot({
 }
 
 function SweepRankPlot({ id, summary }: { id: string; summary: SweepSummary }) {
-  const points = summary.groups.slice(0, 20).map((group, index) => ({ x: index + 1, y: group.metric_mean }));
+  const points = summary.groups
+    .slice(0, 20)
+    .map((group, index) => ({ x: index + 1, y: group.metric_mean }));
   if (points.length === 0) return <div className="empty-state">No completed sweep trials</div>;
   const frame = plotFrame([
     ...points,
@@ -503,25 +578,59 @@ function SweepRankPlot({ id, summary }: { id: string; summary: SweepSummary }) {
           SVG
         </button>
       </div>
-      <svg id={id} viewBox={`0 0 ${frame.width} ${frame.height}`} role="img" aria-label="Sweep ranking" fontFamily="Inter, Arial, sans-serif">
+      <svg
+        id={id}
+        viewBox={`0 0 ${frame.width} ${frame.height}`}
+        role="img"
+        aria-label="Sweep ranking"
+        fontFamily="Inter, Arial, sans-serif"
+      >
         <defs>
           <clipPath id={clipId}>
-            <rect x={frame.margin.left} y={frame.margin.top} width={plotWidth(frame)} height={plotHeight(frame)} />
+            <rect
+              x={frame.margin.left}
+              y={frame.margin.top}
+              width={plotWidth(frame)}
+              height={plotHeight(frame)}
+            />
           </clipPath>
         </defs>
         <PlotAxes frame={frame} xLabel="Rank" yLabel={summary.metric} />
-        <text x={frame.width / 2} y="24" textAnchor="middle" fontSize="15" fontWeight="700" fill="#111827">
+        <text
+          x={frame.width / 2}
+          y="24"
+          textAnchor="middle"
+          fontSize="15"
+          fontWeight="700"
+          fill="#111827"
+        >
           Sweep Ranking
         </text>
         {summary.groups.slice(0, 20).map((group, index) => (
-          <SweepPoint key={group.group_id} group={group} rank={index + 1} frame={frame} clipId={clipId} />
+          <SweepPoint
+            key={group.group_id}
+            group={group}
+            rank={index + 1}
+            frame={frame}
+            clipId={clipId}
+          />
         ))}
       </svg>
     </figure>
   );
 }
 
-function SweepPoint({ group, rank, frame, clipId }: { group: SweepGroupSummary; rank: number; frame: PlotFrame; clipId: string }) {
+function SweepPoint({
+  group,
+  rank,
+  frame,
+  clipId,
+}: {
+  group: SweepGroupSummary;
+  rank: number;
+  frame: PlotFrame;
+  clipId: string;
+}) {
   const x = xScale(rank, frame);
   const y = yScale(group.metric_mean, frame);
   const yMin = yScale(group.metric_min, frame);
@@ -562,23 +671,56 @@ function PlotAxes({ frame, xLabel, yLabel }: { frame: PlotFrame; xLabel: string;
       <rect x={left} y={top} width={right - left} height={bottom - top} fill="#ffffff" />
       {yTicks.map((tick) => (
         <g key={`y-${tick}`}>
-          <line x1={left} y1={yScale(tick, frame)} x2={right} y2={yScale(tick, frame)} stroke="#e6ebf0" strokeWidth="1" />
-          <text x={left - 12} y={yScale(tick, frame) + 4} textAnchor="end" fontSize="12" fill="#111827">
+          <line
+            x1={left}
+            y1={yScale(tick, frame)}
+            x2={right}
+            y2={yScale(tick, frame)}
+            stroke="#e6ebf0"
+            strokeWidth="1"
+          />
+          <text
+            x={left - 12}
+            y={yScale(tick, frame) + 4}
+            textAnchor="end"
+            fontSize="12"
+            fill="#111827"
+          >
             {formatTick(tick)}
           </text>
         </g>
       ))}
       {xTicks.map((tick) => (
         <g key={`x-${tick}`}>
-          <line x1={xScale(tick, frame)} y1={bottom} x2={xScale(tick, frame)} y2={bottom + 6} stroke="#111827" strokeWidth="1.1" />
-          <text x={xScale(tick, frame)} y={bottom + 24} textAnchor="middle" fontSize="12" fill="#111827">
+          <line
+            x1={xScale(tick, frame)}
+            y1={bottom}
+            x2={xScale(tick, frame)}
+            y2={bottom + 6}
+            stroke="#111827"
+            strokeWidth="1.1"
+          />
+          <text
+            x={xScale(tick, frame)}
+            y={bottom + 24}
+            textAnchor="middle"
+            fontSize="12"
+            fill="#111827"
+          >
             {formatTick(tick)}
           </text>
         </g>
       ))}
       <line x1={left} y1={top} x2={left} y2={bottom} stroke="#111827" strokeWidth="1.4" />
       <line x1={left} y1={bottom} x2={right} y2={bottom} stroke="#111827" strokeWidth="1.4" />
-      <text x={(left + right) / 2} y={xLabelY} textAnchor="middle" fontSize="13" fontWeight="600" fill="#111827">
+      <text
+        x={(left + right) / 2}
+        y={xLabelY}
+        textAnchor="middle"
+        fontSize="13"
+        fontWeight="600"
+        fill="#111827"
+      >
         {xLabel}
       </text>
       <text
@@ -596,7 +738,15 @@ function PlotAxes({ frame, xLabel, yLabel }: { frame: PlotFrame; xLabel: string;
   );
 }
 
-function PlotLegend({ series, frame, columns }: { series: PlotSeries[]; frame: PlotFrame; columns: number }) {
+function PlotLegend({
+  series,
+  frame,
+  columns,
+}: {
+  series: PlotSeries[];
+  frame: PlotFrame;
+  columns: number;
+}) {
   if (frame.legendRows === 0) return null;
   const left = frame.margin.left;
   const columnWidth = plotWidth(frame) / columns;
@@ -610,8 +760,18 @@ function PlotLegend({ series, frame, columns }: { series: PlotSeries[]; frame: P
         const y = startY + row * 22;
         return (
           <g key={`legend-${item.id}`}>
-            <line x1={x} y1={y - 4} x2={x + 24} y2={y - 4} stroke={item.color} strokeWidth="2.8" strokeLinecap="round" />
-            {item.band.length > 1 && <rect x={x} y={y - 8} width="24" height="8" fill={item.color} opacity="0.14" />}
+            <line
+              x1={x}
+              y1={y - 4}
+              x2={x + 24}
+              y2={y - 4}
+              stroke={item.color}
+              strokeWidth="2.8"
+              strokeLinecap="round"
+            />
+            {item.band.length > 1 && (
+              <rect x={x} y={y - 8} width="24" height="8" fill={item.color} opacity="0.14" />
+            )}
             <text x={x + 32} y={y} fontSize="12" fill="#111827">
               {truncateLabel(item.label, columns === 1 ? 78 : 38)}
             </text>
@@ -628,14 +788,19 @@ function plotFrame(
   options: { legendRows?: number } = {},
 ): PlotFrame {
   const xs = points.map((point) => point.x);
-  const ys = [...points.map((point) => point.y), ...bands.flatMap((point) => [point.yLow, point.yHigh])];
+  const ys = [
+    ...points.map((point) => point.y),
+    ...bands.flatMap((point) => [point.yLow, point.yHigh]),
+  ];
   const xMin = Math.min(...xs);
   const xMax = Math.max(...xs);
   const yMinRaw = Math.min(...ys);
   const yMaxRaw = Math.max(...ys);
   const xPad = xMin === xMax ? Math.max(1, Math.abs(xMin) * 0.05) : 0;
-  const yPad = yMinRaw === yMaxRaw ? Math.max(1, Math.abs(yMinRaw) * 0.1) : (yMaxRaw - yMinRaw) * 0.08;
-  const yMinPadded = yMinRaw >= 0 && yMinRaw - yPad >= -0.05 * Math.max(1, yMaxRaw) ? 0 : yMinRaw - yPad;
+  const yPad =
+    yMinRaw === yMaxRaw ? Math.max(1, Math.abs(yMinRaw) * 0.1) : (yMaxRaw - yMinRaw) * 0.08;
+  const yMinPadded =
+    yMinRaw >= 0 && yMinRaw - yPad >= -0.05 * Math.max(1, yMaxRaw) ? 0 : yMinRaw - yPad;
   const legendRows = options.legendRows ?? 0;
   const legendHeight = legendRows > 0 ? legendRows * 22 + 12 : 0;
   const baseHeight = 420;
@@ -724,19 +889,38 @@ function trimTrailingZeros(value: number): string {
   return value.toFixed(value >= 10 ? 0 : 1).replace(/\.0$/, "");
 }
 
-function bandPath(band: Array<{ x: number; yLow: number; yHigh: number }>, frame: PlotFrame): string {
-  const upper = band.map((point) => `${xScale(point.x, frame)},${yScale(point.yHigh, frame)}`).join(" L ");
-  const lower = [...band].reverse().map((point) => `${xScale(point.x, frame)},${yScale(point.yLow, frame)}`).join(" L ");
+function bandPath(
+  band: Array<{ x: number; yLow: number; yHigh: number }>,
+  frame: PlotFrame,
+): string {
+  const upper = band
+    .map((point) => `${xScale(point.x, frame)},${yScale(point.yHigh, frame)}`)
+    .join(" L ");
+  const lower = [...band]
+    .reverse()
+    .map((point) => `${xScale(point.x, frame)},${yScale(point.yLow, frame)}`)
+    .join(" L ");
   return `M ${upper} L ${lower} Z`;
 }
 
-function historyPoints(history: ExperimentHistoryPoint[], key: "return" | "loss", xKey: "episode" | "env_step" = "episode"): Array<{ x: number; y: number }> {
+function historyPoints(
+  history: ExperimentHistoryPoint[],
+  key: "return" | "loss",
+  xKey: "episode" | "env_step" = "episode",
+): Array<{ x: number; y: number }> {
   return history
     .map((point) => ({ x: xValue(point, xKey), y: numberValue(point[key]) }))
-    .filter((point): point is { x: number; y: number } => Number.isFinite(point.x) && point.y !== null);
+    .filter(
+      (point): point is { x: number; y: number } => Number.isFinite(point.x) && point.y !== null,
+    );
 }
 
-function comparisonSeries(options: RunOption[], history: "train" | "eval", key: "return" | "loss", xKey: "episode" | "env_step"): PlotSeries[] {
+function comparisonSeries(
+  options: RunOption[],
+  history: "train" | "eval",
+  key: "return" | "loss",
+  xKey: "episode" | "env_step",
+): PlotSeries[] {
   return options.map((option, index) =>
     seriesFromRuns({
       id: `${option.id}:${history}:${key}`,
@@ -774,7 +958,9 @@ function seriesFromRuns({
     label,
     color,
     points: stats.map((point) => ({ x: point.x, y: point.y })),
-    band: stats.filter((point) => point.count > 1 && point.yLow !== point.yHigh).map((point) => ({ x: point.x, yLow: point.yLow, yHigh: point.yHigh })),
+    band: stats
+      .filter((point) => point.count > 1 && point.yLow !== point.yHigh)
+      .map((point) => ({ x: point.x, yLow: point.yLow, yHigh: point.yHigh })),
   };
 }
 
@@ -861,11 +1047,7 @@ function trialOptionLabel(run: ExperimentResult): string {
 
 function filterRunOptions(options: RunOption[], query: string, selectedIds: string[]): RunOption[] {
   const selected = new Set(selectedIds);
-  const terms = query
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   return options.filter((option) => {
     if (selected.has(option.id)) return false;
     if (terms.length === 0) return true;
@@ -917,7 +1099,11 @@ function optionTypeLabel(option: Pick<RunOption, "kind" | "groupRuns">): string 
 }
 
 function sweepFolderName(run: ExperimentResult): string {
-  const path = run.sweep_dir ?? run.sweep_group_run_dir?.split("/trials/")[0] ?? run.run_dir.split("/trials/")[0] ?? run.sweep_id;
+  const path =
+    run.sweep_dir ??
+    run.sweep_group_run_dir?.split("/trials/")[0] ??
+    run.run_dir.split("/trials/")[0] ??
+    run.sweep_id;
   if (!path) return run.sweep_id ?? "sweep";
   const normalized = path.replace(/\/+$/, "");
   const parts = normalized.split("/");
@@ -936,14 +1122,11 @@ function runsForBestGroup(summary: SweepSummary, results: ExperimentResult[]): E
 }
 
 function metricMean(runs: ExperimentResult[], key: string): number | null {
-  const values = runs.map((run) => numberValue(run.metrics[key])).filter((value): value is number => value !== null);
+  const values = runs
+    .map((run) => numberValue(run.metrics[key]))
+    .filter((value): value is number => value !== null);
   if (values.length === 0) return null;
   return values.reduce((total, value) => total + value, 0) / values.length;
-}
-
-function metricMax(runs: ExperimentResult[], key: string): number | null {
-  const values = runs.map((run) => numberValue(run.metrics[key])).filter((value): value is number => value !== null);
-  return values.length ? Math.max(...values) : null;
 }
 
 function statusLabel(runs: ExperimentResult[]): string {
@@ -955,7 +1138,9 @@ function sameStringArray(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
-function aggregateHistoryStats(seriesList: Array<Array<{ x: number; y: number }>>): Array<{ x: number; y: number; yLow: number; yHigh: number; count: number }> {
+function aggregateHistoryStats(
+  seriesList: Array<Array<{ x: number; y: number }>>,
+): Array<{ x: number; y: number; yLow: number; yHigh: number; count: number }> {
   const valuesByEpisode = new Map<number, number[]>();
   for (const series of seriesList) {
     for (const point of series) {
@@ -980,7 +1165,11 @@ function numberValue(value: unknown): number | null {
 }
 
 function xValue(point: ExperimentHistoryPoint, xKey: "episode" | "env_step"): number {
-  if (xKey === "env_step" && typeof point.env_step === "number" && Number.isFinite(point.env_step)) {
+  if (
+    xKey === "env_step" &&
+    typeof point.env_step === "number" &&
+    Number.isFinite(point.env_step)
+  ) {
     return point.env_step;
   }
   return Number(point.episode);
@@ -1016,7 +1205,9 @@ function downloadSvg(id: string, filename: string) {
   clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
   clone.setAttribute("width", clone.getAttribute("viewBox")?.split(" ")[2] ?? "820");
   clone.setAttribute("height", clone.getAttribute("viewBox")?.split(" ")[3] ?? "420");
-  const blob = new Blob([new XMLSerializer().serializeToString(clone)], { type: "image/svg+xml;charset=utf-8" });
+  const blob = new Blob([new XMLSerializer().serializeToString(clone)], {
+    type: "image/svg+xml;charset=utf-8",
+  });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;

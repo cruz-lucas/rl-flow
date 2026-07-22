@@ -70,7 +70,11 @@ export const useFlowStore = create<FlowState>((set, get) => ({
           id: node.id,
           type: "componentNode",
           position: node.position,
-          data: { label: component.display_name, component, config: { ...component.defaults, ...node.config } },
+          data: {
+            label: component.display_name,
+            component,
+            config: { ...component.defaults, ...node.config },
+          },
         };
       }),
       edges: workflow.edges.map((edge, index) => ({
