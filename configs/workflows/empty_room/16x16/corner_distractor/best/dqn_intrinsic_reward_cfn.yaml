@@ -20,25 +20,25 @@ execution:
   backend: slurm
   options:
     account: aip-machado
-    time: "08:00:00"
+    time: "03:00:00"
     cpus_per_task: 2
     mem: 8G
     modules:
       - python/3.11
       - cuda/13.2
 metadata:
-  experiment_id: factorial-design-experiments-experiment5-20260601-000000-000000000
-name: factorial_design_experiments__experiment5
+  experiment_id: 16x16-emptyroom-symbolic-cardinal-cornerdistractor--dqn-cfn-intrinsicreward-20260604-022550-d0c87613
+name: 16x16_emptyroom_symbolic_cardinal_cornerdistractor__dqn_cfn_intrinsicreward
 nodes:
 - component: builtin.agent.dqn_jax
   config:
     activation: relu
     discount: 0.99
     double_q: false
-    eps_decay_steps: 200000
+    eps_decay_steps: 50000
     eps_end: 0.01
     eps_start: 1
-    epsilon_decay_steps: 200000
+    epsilon_decay_steps: 50000
     epsilon_end: 0.01
     epsilon_start: 1
     eval_epsilon: 0
@@ -47,7 +47,7 @@ nodes:
     - 128
     - 128
     huber_delta: 1
-    learning_rate: 1.2e-5
+    learning_rate: 4.5e-04
     loss_type: mse
     max_grad_norm: 10
     normalization: last
@@ -63,9 +63,9 @@ nodes:
     optimizer_momentum: 0
     optimizer_weight_decay: 0
     seed: 0
-    target_update_freq: 512
-    target_update_frequency: 512
-    update_frequency: 1
+    target_update_freq: 256
+    target_update_frequency: 256
+    update_frequency: 16
   id: agent-1
   position:
     x: 211.80511148533765
@@ -85,7 +85,7 @@ nodes:
     y: 213.09072545717612
 - component: builtin.replay.uniform
   config:
-    batch_size: 512
+    batch_size: 32
     capacity: 32768
     min_size: 4096
     save_dataset_path: ''
@@ -116,9 +116,9 @@ nodes:
     cfn_bonus_exponent: 0.5
     cfn_final_tanh: false
     cfn_hidden_units:
-    - 128
-    - 128
-    cfn_learning_rate: 0.001
+    - 512
+    - 512
+    cfn_learning_rate: 2.8e-03
     cfn_optimizer: null
     cfn_output_dim: 128
     cfn_prior_scale: 1
@@ -131,7 +131,7 @@ nodes:
     intrinsic_reward_center: false
     intrinsic_reward_clip: 100
     intrinsic_reward_epsilon: 1
-    intrinsic_reward_scale: 1
+    intrinsic_reward_scale: 0.1
     intrinsic_stats_decay: 0.9
   id: intrinsic_reward-5
   position:
