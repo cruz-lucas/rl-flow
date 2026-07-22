@@ -135,4 +135,3 @@ def _history_columns() -> list[str]:
         "loss",
         "parameters",
     ]
-

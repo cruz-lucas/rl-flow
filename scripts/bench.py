@@ -7,6 +7,7 @@ report; compare successive runs on the same machine rather than across hardware.
     uv run python scripts/bench.py            # print report
     uv run python scripts/bench.py --out bench.json
 """
+
 from __future__ import annotations
 
 import argparse

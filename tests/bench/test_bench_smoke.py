@@ -4,6 +4,7 @@ Confirms the benchmark runs end-to-end and produces sane throughput numbers. It
 is not a cross-machine regression gate — compare `scripts/bench.py` JSON output
 across runs on the same hardware for that.
 """
+
 from __future__ import annotations
 
 import importlib.util
