@@ -19,11 +19,8 @@ def discover_entry_points(
     registry: ComponentRegistry,
     group: str = "rlflow.components",
 ) -> None:
-    entry_points = metadata.entry_points()
-    if hasattr(entry_points, "select"):
-        selected = entry_points.select(group=group)
-    else:
-        selected = entry_points.get(group, [])
+    # Python >= 3.11 (the project floor) always provides EntryPoints.select.
+    selected = metadata.entry_points().select(group=group)
 
     for entry_point in selected:
         for component in _as_components(entry_point.load()):
