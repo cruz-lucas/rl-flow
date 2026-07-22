@@ -47,9 +47,10 @@ Tip: heavy JAX tests run fastest and most deterministically on CPU — `JAX_PLAT
 
 Components (agents, environments, policies, buffers, intrinsic rewards) are `ComponentSpec` objects
 (`rlflow/schemas/component.py`) exposed via the `rlflow.components` entry-point group. Adding one that
-only renders in the UI requires no React changes; making a new *compute* component actually execute
-currently also requires wiring in the runner (`rlflow_builtin/runners/tabular_jax.py`) — see the
-roadmap for the planned registry-driven dispatch.
+renders in the UI requires no React changes, and a *compute* component becomes executable by declaring
+`compile_target={"runtime": {"entry_point": "pkg.module:run_training"}}` on its spec — the builtin
+runner delegates the run to that callable. See `docs/concepts/components.md` and the worked example in
+`tests/fixtures/external_agent/`.
 
 ## Pull requests
 

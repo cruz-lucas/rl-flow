@@ -23,7 +23,11 @@ def agent_config(component_id: str, config: dict[str, Any]) -> AgentConfig:
             planning_iterations=int(config["planning_iterations"]),
         )
     else:
-        raise ValueError(f"Unsupported builtin tabular agent: {component_id}")
+        raise ValueError(
+            f"Unsupported builtin tabular agent: {component_id}. Third-party agents "
+            "must declare compile_target={'runtime': {'entry_point': 'pkg.module:fn'}} "
+            "on their ComponentSpec to be executable by this runner."
+        )
     return AgentConfig(
         algorithm=algorithm,
         learning_rate=float(config["learning_rate"]),

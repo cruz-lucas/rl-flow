@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +11,7 @@ import jax
 import numpy as np
 import yaml
 
+from rlflow.registry.base import ComponentRegistry
 from rlflow.registry.builtin import create_default_registry
 from rlflow.schemas.workflow import WorkflowSpec
 from rlflow.tracking.logger import JsonlLogger
@@ -41,13 +44,26 @@ def main() -> int:
     parser.add_argument("--resolved_config", required=True)
     parser.add_argument("--run_dir", required=True)
     args = parser.parse_args()
-
-    run_dir = Path(args.run_dir)
-    workflow = WorkflowSpec.model_validate(
-        yaml.safe_load(Path(args.workflow).read_text(encoding="utf-8"))
+    return run_compiled(
+        workflow_path=Path(args.workflow),
+        resolved_config_path=Path(args.resolved_config),
+        run_dir=Path(args.run_dir),
     )
-    resolved = yaml.safe_load(Path(args.resolved_config).read_text(encoding="utf-8"))
-    registry = create_default_registry(discover=False)
+
+
+def run_compiled(
+    *,
+    workflow_path: Path,
+    resolved_config_path: Path,
+    run_dir: Path,
+    registry: ComponentRegistry | None = None,
+) -> int:
+    """Execute a compiled run directory (the body behind the CLI entry point)."""
+    workflow = WorkflowSpec.model_validate(
+        yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    )
+    resolved = yaml.safe_load(resolved_config_path.read_text(encoding="utf-8"))
+    registry = registry or create_default_registry()
 
     node_ids = _runner_inputs(workflow, registry)
     agent_node = workflow_node(workflow, node_ids["agent"])
@@ -124,6 +140,11 @@ def main() -> int:
         )
         return 0
 
+    delegate = _runtime_delegate(registry, agent_node.component)
+    if delegate is not None:
+        delegate(workflow=workflow, resolved=resolved, run_dir=run_dir)
+        return 0
+
     agent = agent_config(agent_node.component, resolved[agent_node.id])
     policy = None
     policy_component = None
@@ -155,6 +176,45 @@ def main() -> int:
         runner_settings=resolved[runner_node.id],
     )
     return 0
+
+
+def _runtime_delegate(
+    registry: ComponentRegistry,
+    component_id: str,
+) -> Callable[..., Any] | None:
+    """Resolve an externally-provided training entry point for ``component_id``.
+
+    Third-party agents make themselves *executable* (not just renderable) by
+    declaring on their :class:`ComponentSpec`::
+
+        compile_target={"runtime": {"entry_point": "my_package.module:run_training"}}
+
+    The callable is invoked as ``fn(workflow=..., resolved=..., run_dir=...)``
+    and owns training plus writing the run outputs (metrics.json, logs/...).
+    Returns ``None`` when the component does not declare a runtime hook, in
+    which case the builtin dispatch continues.
+    """
+    spec = registry.maybe_get(component_id)
+    if spec is None:
+        return None
+    runtime = spec.compile_target.get("runtime") if isinstance(spec.compile_target, dict) else None
+    entry_point = runtime.get("entry_point") if isinstance(runtime, dict) else None
+    if not entry_point:
+        return None
+    module_name, _, attribute = str(entry_point).partition(":")
+    if not module_name or not attribute:
+        raise ValueError(
+            f"Component {component_id} declares an invalid runtime entry_point "
+            f"{entry_point!r}; expected the form 'package.module:function'."
+        )
+    module = importlib.import_module(module_name)
+    try:
+        return getattr(module, attribute)
+    except AttributeError as exc:
+        raise ValueError(
+            f"Component {component_id} runtime entry_point {entry_point!r} "
+            f"does not exist in module {module_name!r}."
+        ) from exc
 
 
 def _dqn_replay_from_node(
