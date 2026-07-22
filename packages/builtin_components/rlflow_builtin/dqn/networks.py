@@ -1,13 +1,16 @@
-"""Pure network primitives for the DQN components (MLP + autoencoder).
+"""Network primitives for the DQN components (MLP + autoencoder + optimizer).
 
-Extracted from ``dqn.training`` so the neural-network math lives on its own. These
-functions are dependency-free (jax only) and are re-exported by ``dqn.training``.
+Extracted from ``dqn.training`` so the neural-network building blocks live on
+their own. Re-exported by ``dqn.training`` for backwards compatibility.
 """
 
 from __future__ import annotations
 
 import jax
 import jax.numpy as jnp
+import optax
+
+from rlflow_builtin.dqn.config import DqnAgentConfig
 
 
 def _activation(x: jax.Array, name: str) -> jax.Array:
@@ -89,3 +92,31 @@ def _apply_autoencoder_encoder(
             return x
         x = _activation(x, activation)
     return x
+
+
+def _optimizer(
+    agent: DqnAgentConfig,
+    learning_rate: float,
+    optimizer_name: str,
+) -> optax.GradientTransformation:
+    if optimizer_name == "sgd":
+        base = optax.sgd(learning_rate, momentum=agent.optimizer_momentum)
+    elif optimizer_name == "rmsprop":
+        base = optax.rmsprop(
+            learning_rate,
+            decay=agent.optimizer_decay,
+            eps=agent.optimizer_epsilon,
+            momentum=agent.optimizer_momentum,
+            centered=agent.optimizer_centered,
+        )
+    else:
+        base = optax.adamw(
+            learning_rate,
+            b1=agent.optimizer_beta1,
+            b2=agent.optimizer_beta2,
+            eps=agent.optimizer_epsilon,
+            weight_decay=agent.optimizer_weight_decay,
+        )
+    if agent.max_grad_norm > 0.0:
+        return optax.chain(optax.clip_by_global_norm(agent.max_grad_norm), base)
+    return base
