@@ -7,6 +7,8 @@ import numpy as np
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from rlflow_api.routes._common import absolute_run_root as _absolute_run_root
+from rlflow_api.routes._common import display_path as _display_path
 from rlflow_api.services.dataset_analysis import (
     OfflineRndAnalysis as OfflineRndAnalysisResult,
 )
@@ -267,20 +269,6 @@ def _resolve_dataset_path(path: str, request: Request) -> Path:
         if candidate.exists():
             return candidate
     return candidates[0] if candidates else raw_path.resolve()
-
-
-def _absolute_run_root(request: Request) -> Path:
-    run_root = Path(request.app.state.settings.run_root).expanduser()
-    if run_root.is_absolute():
-        return run_root.resolve()
-    return (Path.cwd() / run_root).resolve()
-
-
-def _display_path(path: Path) -> str:
-    try:
-        return str(path.resolve().relative_to(Path.cwd().resolve()))
-    except ValueError:
-        return str(path.resolve())
 
 
 def _array_summary(name: str, array: np.ndarray) -> DatasetArraySummary:

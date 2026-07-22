@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Request
 from rlflow.execution.local import LocalExecutor
 from rlflow.schemas.job import JobInfo, JobState, JobStatus
 from rlflow.storage.models import JobRecord
+from rlflow_api.routes._common import executor as _executor
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -64,11 +65,3 @@ def _refresh_job(request: Request, record: JobRecord) -> JobInfo:
     if status.state in {JobState.succeeded, JobState.failed, JobState.cancelled, JobState.unknown}:
         request.app.state.storage.update_experiment_status(info.experiment_id, status.state.value)
     return info
-
-
-def _executor(request: Request, backend: str):
-    if backend == "local":
-        return request.app.state.local_executor
-    if backend == "slurm":
-        return request.app.state.slurm_executor
-    raise HTTPException(status_code=400, detail=f"Unsupported backend: {backend}")

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, Literal
 
@@ -8,8 +7,7 @@ import yaml
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from rlflow.execution.local import LocalExecutor
-from rlflow.execution.slurm import SlurmExecutor
+from rlflow.analysis.parameters import non_seed_parameters as _non_seed_parameters
 from rlflow.graph.compiler import WorkflowCompilationError, WorkflowCompiler
 from rlflow.graph.run_naming import make_flow_run_dir, make_run_id
 from rlflow.schemas.experiment import ExperimentSpec
@@ -18,6 +16,11 @@ from rlflow.schemas.sweep import SweepCompilation, SweepTrial
 from rlflow.schemas.workflow import WorkflowSpec
 from rlflow.storage.models import ExperimentRecord
 from rlflow.tracking.status import RunStatusState, load_status
+from rlflow_api.routes._common import absolute_run_root as _absolute_run_root
+from rlflow_api.routes._common import executor as _executor
+from rlflow_api.routes._common import read_json as _read_json
+from rlflow_api.routes._common import read_jsonl as _read_jsonl
+from rlflow_api.routes._common import read_yaml_dict as _read_yaml_dict
 
 router = APIRouter(prefix="/experiments", tags=["experiments"])
 
@@ -96,14 +99,6 @@ def run_experiment(payload: RunExperimentRequest, request: Request) -> JobInfo:
     request.app.state.storage.save_job(job)
     request.app.state.storage.save_experiment(experiment, status="running")
     return job
-
-
-def _executor(request: Request, backend: str) -> LocalExecutor | SlurmExecutor:
-    if backend == "local":
-        return request.app.state.local_executor
-    if backend == "slurm":
-        return request.app.state.slurm_executor
-    raise HTTPException(status_code=400, detail=f"Unsupported backend: {backend}")
 
 
 def _experiment_result(record: ExperimentRecord) -> dict[str, Any]:
@@ -244,64 +239,8 @@ def _result_modified_time(result: dict[str, Any]) -> float:
     return 0.0
 
 
-def _absolute_run_root(request: Request) -> Path:
-    run_root = Path(request.app.state.settings.run_root).expanduser()
-    if run_root.is_absolute():
-        return run_root.resolve()
-    return (Path.cwd() / run_root).resolve()
-
-
-def _read_yaml_dict(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _non_seed_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in parameters.items() if not _is_seed_parameter(key)}
-
-
-def _is_seed_parameter(key: str) -> bool:
-    normalized = key.lower()
-    return normalized == "seed" or normalized.endswith("_seed") or normalized.endswith(".seed")
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
 def _read_metrics(run_dir: Path) -> dict[str, Any]:
     metrics = _read_json(run_dir / "summaries" / "metrics.json")
     if metrics:
         return metrics
     return _read_json(run_dir / "metrics.json")
-
-
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-    rows: list[dict[str, Any]] = []
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return rows
-    for line in lines:
-        if not line.strip():
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(row, dict):
-            rows.append(row)
-    return rows

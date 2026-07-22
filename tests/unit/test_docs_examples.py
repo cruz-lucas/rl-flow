@@ -4,6 +4,7 @@ Every ``configs/**/*.yaml`` path mentioned in the README or the docs must point 
 a file that actually exists, so a reader following the docs never hits a
 ``file not found`` on their first command.
 """
+
 from __future__ import annotations
 
 import re

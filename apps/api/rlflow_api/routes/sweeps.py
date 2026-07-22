@@ -19,6 +19,8 @@ from rlflow.schemas.sweep import (
     SweepSpec,
 )
 from rlflow.schemas.workflow import ExecutionSpec, WorkflowSpec
+from rlflow_api.routes._common import absolute_run_root as _absolute_run_root
+from rlflow_api.routes._common import display_path as _display_path
 
 router = APIRouter(prefix="/sweeps", tags=["sweeps"])
 
@@ -343,20 +345,6 @@ def _unique(values: list[Any]) -> list[Any]:
         if value not in output:
             output.append(value)
     return output
-
-
-def _absolute_run_root(request: Request) -> Path:
-    run_root = Path(request.app.state.settings.run_root).expanduser()
-    if run_root.is_absolute():
-        return run_root.resolve()
-    return (Path.cwd() / run_root).resolve()
-
-
-def _display_path(path: Path) -> str:
-    try:
-        return str(path.resolve().relative_to(Path.cwd().resolve()))
-    except ValueError:
-        return str(path.resolve())
 
 
 def _resolve_sweep_manifest_path(path: str, request: Request) -> Path:

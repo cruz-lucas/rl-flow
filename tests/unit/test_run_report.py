@@ -49,7 +49,13 @@ def _make_run(tmp_path: Path) -> Path:
     (run / "status.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
     (run / "manifest.json").write_text(
         json.dumps(
-            {"run_id": "r1", "backend": "local", "seed": 0, "git_commit": "abc123", "git_dirty": False}
+            {
+                "run_id": "r1",
+                "backend": "local",
+                "seed": 0,
+                "git_commit": "abc123",
+                "git_dirty": False,
+            }
         ),
         encoding="utf-8",
     )

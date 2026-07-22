@@ -5,6 +5,7 @@ same first-class treatment to a single run produced by ``rlflow run`` so a
 researcher iterating on one config can quickly inspect status, metrics, and the
 learning curve.
 """
+
 from __future__ import annotations
 
 import json
@@ -112,8 +113,7 @@ def format_run_report(summary: dict[str, Any]) -> str:
 
     lines.append("")
     lines.append(
-        f"Train episodes: {summary['train_episodes']}"
-        f"    Eval episodes: {summary['eval_episodes']}"
+        f"Train episodes: {summary['train_episodes']}    Eval episodes: {summary['eval_episodes']}"
     )
     if summary.get("total_env_steps") is not None:
         lines.append(f"Total env steps: {summary['total_env_steps']}")
@@ -162,7 +162,9 @@ def plot_run_curve(
     x = "env_step" if "env_step" in history_df.columns else "episode"
     has_discounted = "discounted_return" in history_df.columns
     y = "discounted_return" if has_discounted else "return"
-    if x not in history_df.columns or (y not in history_df.columns and "return" not in history_df.columns):
+    if x not in history_df.columns or (
+        y not in history_df.columns and "return" not in history_df.columns
+    ):
         return None
 
     prepared = history_df.copy()
