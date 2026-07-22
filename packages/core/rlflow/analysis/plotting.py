@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -56,7 +57,7 @@ def plot_learning_curves(
     paths: dict[str, Path] = {}
     for fmt in formats:
         path = out_dir / f"learning_curve.{fmt}"
-        save_kwargs = {"bbox_inches": "tight"}
+        save_kwargs: dict[str, Any] = {"bbox_inches": "tight"}
         if fmt == "png":
             save_kwargs["dpi"] = dpi
         fig.savefig(path, **save_kwargs)

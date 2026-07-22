@@ -35,6 +35,9 @@ jobs:
       - name: Format check (ruff)
         run: uv run ruff format --check packages apps tests scripts
 
+      - name: Type check (mypy, core package)
+        run: uv run mypy packages/core
+
       - name: Tests (pytest)
         env:
           JAX_PLATFORMS: cpu
@@ -57,6 +60,12 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Lint (eslint)
+        run: pnpm --filter @rl-flow/web lint
+
+      - name: Format check (prettier)
+        run: pnpm --filter @rl-flow/web format:check
 
       - name: Build
         run: pnpm --filter @rl-flow/web build

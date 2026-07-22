@@ -10,7 +10,7 @@ import re
 import stat
 from itertools import product
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -186,7 +186,7 @@ class SweepCompiler:
         best = copy.deepcopy(groups[0]) if groups else None
         reverse = metric_goal == "maximize"
         completed = [row for row in rows if isinstance(row["metric"], (int, float))]
-        completed.sort(key=lambda row: float(row["metric"]), reverse=reverse)
+        completed.sort(key=lambda row: float(cast("int | float", row["metric"])), reverse=reverse)
         return {
             "sweep_id": compilation.sweep_id,
             "metric": metric_name,

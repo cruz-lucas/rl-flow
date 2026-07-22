@@ -4,7 +4,7 @@ import json
 import subprocess
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 import typer
 import yaml
@@ -230,7 +230,7 @@ def run_workflow(
     out: Path | None = typer.Option(None, "--out"),
 ) -> None:
     workflow = _load_workflow(path)
-    workflow.execution.backend = backend
+    workflow.execution.backend = _validated_backend(backend)
     if out is None:
         run_id = make_run_id(workflow.name)
         workflow.metadata = {**workflow.metadata, "experiment_id": run_id}
@@ -721,7 +721,7 @@ def _resolve_curve_config(
     if not isinstance(config_section, dict):
         raise ValueError("plot config curves section must be a mapping")
 
-    config = {
+    config: dict[str, Any] = {
         "history": "train",
         "x": "env_step",
         "y": "discounted_return",
@@ -763,7 +763,7 @@ def _resolve_figure_config(config_section: Any, *, x: str, y: str) -> dict[str, 
     if not isinstance(config_section, dict):
         raise ValueError("plot config figure section must be a mapping")
 
-    config = {
+    config: dict[str, Any] = {
         "width": 3.25,
         "height": 2.35,
         "dpi": 300,
@@ -837,16 +837,21 @@ def _csv_cell(value: Any) -> Any:
     return value
 
 
+def _validated_backend(backend: str) -> Literal["local", "slurm"]:
+    if backend in {"local", "slurm"}:
+        return cast('Literal["local", "slurm"]', backend)
+    typer.echo(f"Unsupported backend: {backend}", err=True)
+    raise typer.Exit(code=1)
+
+
 def _override_sweep_backend(spec: SweepSpec, backend: str | None) -> None:
     if backend is None:
         return
-    if backend not in {"local", "slurm"}:
-        typer.echo(f"Unsupported backend: {backend}", err=True)
-        raise typer.Exit(code=1)
+    validated = _validated_backend(backend)
     if spec.execution is None:
-        spec.execution = ExecutionSpec(backend=backend)
+        spec.execution = ExecutionSpec(backend=validated)
     else:
-        spec.execution.backend = backend
+        spec.execution.backend = validated
 
 
 def _compiled_sweep_backend(workflow_path: str) -> str:

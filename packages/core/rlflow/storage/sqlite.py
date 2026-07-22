@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, col, create_engine, select
 
 from rlflow.schemas.experiment import ExperimentSpec
 from rlflow.schemas.job import JobInfo, JobState, JobStatus
@@ -63,7 +63,7 @@ class Storage:
         with Session(self.engine) as session:
             return list(
                 session.exec(
-                    select(ExperimentRecord).order_by(ExperimentRecord.created_at.desc())
+                    select(ExperimentRecord).order_by(col(ExperimentRecord.created_at).desc())
                 ).all()
             )
 
@@ -109,7 +109,7 @@ class Storage:
         with Session(self.engine) as session:
             return list(
                 session.exec(
-                    select(WorkflowRecord).order_by(WorkflowRecord.updated_at.desc())
+                    select(WorkflowRecord).order_by(col(WorkflowRecord.updated_at).desc())
                 ).all()
             )
 
@@ -158,7 +158,9 @@ class Storage:
 
     def list_jobs(self) -> list[JobRecord]:
         with Session(self.engine) as session:
-            return list(session.exec(select(JobRecord).order_by(JobRecord.created_at.desc())).all())
+            return list(
+                session.exec(select(JobRecord).order_by(col(JobRecord.created_at).desc())).all()
+            )
 
     def get_job(self, job_id: str) -> JobRecord | None:
         with Session(self.engine) as session:

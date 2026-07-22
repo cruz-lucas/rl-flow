@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from collections.abc import Iterable
 
 from rlflow.schemas.component import ComponentKind, ComponentSpec
@@ -30,13 +31,15 @@ class ComponentRegistry:
     def list(self) -> list[ComponentSpec]:
         return [self._components[key] for key in sorted(self._components)]
 
-    def list_by_kind(self, kind: ComponentKind) -> list[ComponentSpec]:
+    def list_by_kind(self, kind: ComponentKind) -> builtins.list[ComponentSpec]:
         return [component for component in self.list() if component.kind == kind]
 
-    def list_by_source(self, source: str) -> list[ComponentSpec]:
+    def list_by_source(self, source: str) -> builtins.list[ComponentSpec]:
         return [component for component in self.list() if component.source == source]
 
-    def list_by_source_and_kind(self, source: str, kind: ComponentKind) -> list[ComponentSpec]:
+    def list_by_source_and_kind(
+        self, source: str, kind: ComponentKind
+    ) -> builtins.list[ComponentSpec]:
         return [
             component
             for component in self.list()

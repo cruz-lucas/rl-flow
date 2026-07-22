@@ -45,7 +45,7 @@ format-check: ## Check formatting without modifying files
 typecheck: ## Type-check the core package with mypy
 	uv run mypy packages/core
 
-check: lint format-check test ## Run lint + format-check + tests (the pre-PR gate)
+check: lint format-check typecheck test ## Run lint + format-check + typecheck + tests (the pre-PR gate)
 
 docs: ## Build the documentation site (strict)
 	uv run python scripts/generate_docs_reference.py
@@ -62,6 +62,10 @@ web-build: ## Build the web app
 
 web-test: ## Run the web test suite
 	pnpm --filter @rl-flow/web test
+
+web-lint: ## Lint + format-check the web app
+	pnpm --filter @rl-flow/web lint
+	pnpm --filter @rl-flow/web format:check
 
 bench: ## Run the performance benchmark guard
 	uv run python scripts/bench.py
