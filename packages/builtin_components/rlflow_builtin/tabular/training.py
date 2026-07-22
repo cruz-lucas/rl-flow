@@ -59,6 +59,56 @@ def _select_next_action(
     )
 
 
+def _run_eval_scan(evaluate_episode, key, eval_episodes: int):
+    """Run ``eval_episodes`` greedy rollouts (or return empty arrays when zero).
+
+    Shared by every rollout-based tabular path; ``evaluate_episode`` is the
+    path-specific per-episode closure, so the scan/RNG behaviour is unchanged.
+    """
+    if eval_episodes > 0:
+
+        @jax.jit
+        def run_eval(initial_key):
+            return jax.lax.scan(
+                lambda carry, _: evaluate_episode(carry),
+                initial_key,
+                jnp.arange(eval_episodes),
+            )
+
+        _, eval_history = run_eval(key)
+        return eval_history
+    return (
+        jnp.asarray([], dtype=jnp.float32),
+        jnp.asarray([], dtype=jnp.float32),
+        jnp.asarray([], dtype=jnp.int32),
+    )
+
+
+def _tabular_result(
+    q_final,
+    action_counts_final,
+    train_history,
+    eval_arrays,
+    *,
+    dataset: TabularDataset | None = None,
+) -> TabularRunResult:
+    """Assemble a :class:`TabularRunResult` from the train/eval scan outputs."""
+    train_returns, train_discounted_returns, train_lengths, train_losses = train_history
+    eval_returns, eval_discounted_returns, eval_lengths = eval_arrays
+    return TabularRunResult(
+        q_table=np.asarray(q_final),
+        action_counts=np.asarray(action_counts_final),
+        train_returns=np.asarray(train_returns),
+        train_discounted_returns=np.asarray(train_discounted_returns),
+        train_lengths=np.asarray(train_lengths),
+        train_losses=np.asarray(train_losses),
+        eval_returns=np.asarray(eval_returns),
+        eval_discounted_returns=np.asarray(eval_discounted_returns),
+        eval_lengths=np.asarray(eval_lengths),
+        dataset=dataset,
+    )
+
+
 def run_tabular_training(
     agent: AgentConfig,
     policy: PolicyConfig | None,
@@ -317,34 +367,12 @@ def run_tabular_training(
         buffer_state,
         key,
     )
-    if runner.eval_episodes > 0:
-
-        @jax.jit
-        def run_eval_scan(initial_key):
-            return jax.lax.scan(
-                lambda carry, _: evaluate_episode(carry),
-                initial_key,
-                jnp.arange(runner.eval_episodes),
-            )
-
-        _, eval_history = run_eval_scan(key)
-        eval_returns, eval_discounted_returns, eval_lengths = eval_history
-    else:
-        eval_returns = jnp.asarray([], dtype=jnp.float32)
-        eval_discounted_returns = jnp.asarray([], dtype=jnp.float32)
-        eval_lengths = jnp.asarray([], dtype=jnp.int32)
-
-    train_returns, train_discounted_returns, train_lengths, train_losses = train_history
-    return TabularRunResult(
-        q_table=np.asarray(q_final),
-        action_counts=np.asarray(action_counts_final),
-        train_returns=np.asarray(train_returns),
-        train_discounted_returns=np.asarray(train_discounted_returns),
-        train_lengths=np.asarray(train_lengths),
-        train_losses=np.asarray(train_losses),
-        eval_returns=np.asarray(eval_returns),
-        eval_discounted_returns=np.asarray(eval_discounted_returns),
-        eval_lengths=np.asarray(eval_lengths),
+    eval_arrays = _run_eval_scan(evaluate_episode, key, runner.eval_episodes)
+    return _tabular_result(
+        q_final,
+        action_counts_final,
+        train_history,
+        eval_arrays,
         dataset=_dataset_from_buffer(final_buffer) if replay_buffer.save_dataset_path else None,
     )
 
@@ -503,35 +531,8 @@ def _run_rmax_tabular_training(
     (final_model, key), train_history = run_train_scan(model_state, key)
     q_final = final_model.q_table
     action_counts_final = final_model.action_counts
-    if runner.eval_episodes > 0:
-
-        @jax.jit
-        def run_eval_scan(initial_key):
-            return jax.lax.scan(
-                lambda carry, _: evaluate_episode(carry),
-                initial_key,
-                jnp.arange(runner.eval_episodes),
-            )
-
-        _, eval_history = run_eval_scan(key)
-        eval_returns, eval_discounted_returns, eval_lengths = eval_history
-    else:
-        eval_returns = jnp.asarray([], dtype=jnp.float32)
-        eval_discounted_returns = jnp.asarray([], dtype=jnp.float32)
-        eval_lengths = jnp.asarray([], dtype=jnp.int32)
-
-    train_returns, train_discounted_returns, train_lengths, train_losses = train_history
-    return TabularRunResult(
-        q_table=np.asarray(q_final),
-        action_counts=np.asarray(action_counts_final),
-        train_returns=np.asarray(train_returns),
-        train_discounted_returns=np.asarray(train_discounted_returns),
-        train_lengths=np.asarray(train_lengths),
-        train_losses=np.asarray(train_losses),
-        eval_returns=np.asarray(eval_returns),
-        eval_discounted_returns=np.asarray(eval_discounted_returns),
-        eval_lengths=np.asarray(eval_lengths),
-    )
+    eval_arrays = _run_eval_scan(evaluate_episode, key, runner.eval_episodes)
+    return _tabular_result(q_final, action_counts_final, train_history, eval_arrays)
 
 
 def _run_navix_rmax_tabular_training(
@@ -740,35 +741,8 @@ def _run_navix_rmax_tabular_training(
     (final_model, key), train_history = run_train_scan(model_state, key)
     q_final = final_model.q_table
     action_counts_final = final_model.action_counts
-    if runner.eval_episodes > 0:
-
-        @jax.jit
-        def run_eval_scan(initial_key):
-            return jax.lax.scan(
-                lambda carry, _: evaluate_episode(carry),
-                initial_key,
-                jnp.arange(runner.eval_episodes),
-            )
-
-        _, eval_history = run_eval_scan(key)
-        eval_returns, eval_discounted_returns, eval_lengths = eval_history
-    else:
-        eval_returns = jnp.asarray([], dtype=jnp.float32)
-        eval_discounted_returns = jnp.asarray([], dtype=jnp.float32)
-        eval_lengths = jnp.asarray([], dtype=jnp.int32)
-
-    train_returns, train_discounted_returns, train_lengths, train_losses = train_history
-    return TabularRunResult(
-        q_table=np.asarray(q_final),
-        action_counts=np.asarray(action_counts_final),
-        train_returns=np.asarray(train_returns),
-        train_discounted_returns=np.asarray(train_discounted_returns),
-        train_lengths=np.asarray(train_lengths),
-        train_losses=np.asarray(train_losses),
-        eval_returns=np.asarray(eval_returns),
-        eval_discounted_returns=np.asarray(eval_discounted_returns),
-        eval_lengths=np.asarray(eval_lengths),
-    )
+    eval_arrays = _run_eval_scan(evaluate_episode, key, runner.eval_episodes)
+    return _tabular_result(q_final, action_counts_final, train_history, eval_arrays)
 
 
 def _initial_rmax_model(agent: AgentConfig, environment: EnvironmentConfig) -> RMaxModelState:
@@ -959,7 +933,6 @@ def _run_offline_tabular_training(
     (q_final, action_counts_final, eval_key), train_history = run_train_scan(
         q_table, action_counts, key
     )
-    train_returns, train_discounted_returns, train_lengths, train_losses = train_history
 
     if runner.eval_episodes > 0 and environment.name != "navix":
         env_step = make_step_fn(environment)
@@ -1038,16 +1011,11 @@ def _run_offline_tabular_training(
         eval_discounted_returns = jnp.asarray([], dtype=jnp.float32)
         eval_lengths = jnp.asarray([], dtype=jnp.int32)
 
-    return TabularRunResult(
-        q_table=np.asarray(q_final),
-        action_counts=np.asarray(action_counts_final),
-        train_returns=np.asarray(train_returns),
-        train_discounted_returns=np.asarray(train_discounted_returns),
-        train_lengths=np.asarray(train_lengths),
-        train_losses=np.asarray(train_losses),
-        eval_returns=np.asarray(eval_returns),
-        eval_discounted_returns=np.asarray(eval_discounted_returns),
-        eval_lengths=np.asarray(eval_lengths),
+    return _tabular_result(
+        q_final,
+        action_counts_final,
+        train_history,
+        (eval_returns, eval_discounted_returns, eval_lengths),
         dataset=_dataset_from_buffer(buffer_state) if replay_buffer.save_dataset_path else None,
     )
 
@@ -1348,34 +1316,12 @@ def _run_navix_tabular_training(
         buffer_state,
         key,
     )
-    if runner.eval_episodes > 0:
-
-        @jax.jit
-        def run_eval_scan(initial_key):
-            return jax.lax.scan(
-                lambda carry, _: evaluate_episode(carry),
-                initial_key,
-                jnp.arange(runner.eval_episodes),
-            )
-
-        _, eval_history = run_eval_scan(key)
-        eval_returns, eval_discounted_returns, eval_lengths = eval_history
-    else:
-        eval_returns = jnp.asarray([], dtype=jnp.float32)
-        eval_discounted_returns = jnp.asarray([], dtype=jnp.float32)
-        eval_lengths = jnp.asarray([], dtype=jnp.int32)
-
-    train_returns, train_discounted_returns, train_lengths, train_losses = train_history
-    return TabularRunResult(
-        q_table=np.asarray(q_final),
-        action_counts=np.asarray(action_counts_final),
-        train_returns=np.asarray(train_returns),
-        train_discounted_returns=np.asarray(train_discounted_returns),
-        train_lengths=np.asarray(train_lengths),
-        train_losses=np.asarray(train_losses),
-        eval_returns=np.asarray(eval_returns),
-        eval_discounted_returns=np.asarray(eval_discounted_returns),
-        eval_lengths=np.asarray(eval_lengths),
+    eval_arrays = _run_eval_scan(evaluate_episode, key, runner.eval_episodes)
+    return _tabular_result(
+        q_final,
+        action_counts_final,
+        train_history,
+        eval_arrays,
         dataset=_dataset_from_buffer(final_buffer) if replay_buffer.save_dataset_path else None,
     )
 

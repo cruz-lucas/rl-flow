@@ -64,6 +64,9 @@ pythonpath = [
   "packages/builtin_components",
   "apps/api",
 ]
+markers = [
+  "bench: performance benchmark smoke tests (see scripts/bench.py)",
+]
 
 [tool.ruff]
 target-version = "py311"
