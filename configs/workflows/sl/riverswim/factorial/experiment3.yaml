@@ -1,0 +1,70 @@
+name: sl_riverswim_factorial__experiment3
+description: 'S&L riverswim tabular Q-learning factorial cell 3/16 [O]: epsilon_greedy=0,
+  optimistic_init=1, count_bonus=0, replay=0'
+execution:
+  backend: local
+  cluster: null
+  options: {}
+metadata:
+  experiment_id: sl-riverswim-factorial--experiment3
+nodes:
+- id: env
+  component: builtin.env.riverswim
+  position:
+    x: 120
+    y: 160
+  config:
+    num_states: 6
+    start_state: 0
+    random_start: true
+    p_left: 0.1
+    p_stay: 0.6
+    p_right: 0.3
+    easy_reward: 5.0
+    hard_reward: 10000.0
+    common_reward: 0.0
+- id: agent
+  component: builtin.agent.q_learning_tabular
+  position:
+    x: 120
+    y: 20
+  config:
+    learning_rate: 0.1
+    discount: 0.95
+    initial_q: 200000.0
+    count_bonus_beta: 0.0
+- id: policy
+  component: builtin.policy.epsilon_greedy
+  position:
+    x: 120
+    y: 300
+  config:
+    epsilon: 0.0
+    eval_epsilon: 0.0
+- id: runner
+  component: builtin.runner.tabular_jax
+  position:
+    x: 480
+    y: 160
+  config:
+    seed: 0
+    train_episodes: 1
+    train_steps: 5000
+    max_episode_steps: 5000
+    eval_episodes: 0
+    checkpoint_freq: null
+    checkpoint_dir: checkpoints
+    save_final_checkpoint: false
+edges:
+- from_node: env
+  from_port: environment
+  to_node: runner
+  to_port: environment
+- from_node: agent
+  from_port: agent
+  to_node: runner
+  to_port: agent
+- from_node: policy
+  from_port: policy
+  to_node: runner
+  to_port: policy

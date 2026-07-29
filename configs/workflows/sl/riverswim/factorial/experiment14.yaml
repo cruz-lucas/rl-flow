@@ -1,0 +1,87 @@
+name: sl_riverswim_factorial__experiment14
+description: 'S&L riverswim tabular Q-learning factorial cell 14/16 [ECR]: epsilon_greedy=1,
+  optimistic_init=0, count_bonus=1, replay=1'
+execution:
+  backend: local
+  cluster: null
+  options: {}
+metadata:
+  experiment_id: sl-riverswim-factorial--experiment14
+nodes:
+- id: env
+  component: builtin.env.riverswim
+  position:
+    x: 120
+    y: 160
+  config:
+    num_states: 6
+    start_state: 0
+    random_start: true
+    p_left: 0.1
+    p_stay: 0.6
+    p_right: 0.3
+    easy_reward: 5.0
+    hard_reward: 10000.0
+    common_reward: 0.0
+- id: agent
+  component: builtin.agent.q_learning_tabular
+  position:
+    x: 120
+    y: 20
+  config:
+    learning_rate: 0.05
+    discount: 0.95
+    initial_q: 0.0
+    count_bonus_beta: 4000.0
+- id: policy
+  component: builtin.policy.epsilon_greedy
+  position:
+    x: 120
+    y: 300
+  config:
+    epsilon: 0.1
+    eval_epsilon: 0.0
+- id: replay
+  component: builtin.replay.tabular_uniform
+  position:
+    x: 300
+    y: 320
+  config:
+    capacity: 5000
+    batch_size: 64
+    min_size: 1
+    updates_per_step: 1
+    replay_until_convergence: true
+    convergence_tol: 1.0
+    max_replay_iters: 100
+- id: runner
+  component: builtin.runner.tabular_jax
+  position:
+    x: 480
+    y: 160
+  config:
+    seed: 0
+    train_episodes: 1
+    train_steps: 5000
+    max_episode_steps: 5000
+    eval_episodes: 0
+    checkpoint_freq: null
+    checkpoint_dir: checkpoints
+    save_final_checkpoint: false
+edges:
+- from_node: env
+  from_port: environment
+  to_node: runner
+  to_port: environment
+- from_node: agent
+  from_port: agent
+  to_node: runner
+  to_port: agent
+- from_node: policy
+  from_port: policy
+  to_node: runner
+  to_port: policy
+- from_node: replay
+  from_port: replay_buffer
+  to_node: runner
+  to_port: replay_buffer

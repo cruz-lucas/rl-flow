@@ -3,15 +3,15 @@
 The SLURM sweep example is:
 
 ```text
-configs/sweeps/16x16_emptyroom_symbolic_cardinal_cornerdistractor__dqn_countbasedoracle.yaml
+configs/sweeps/emptyroom/seeds__dqn_rmax_countbasedoracle.yaml
 ```
 
-It points at the DQN + R-Max count-oracle workflow, expands a grid of learning rates, replay sizes, target update periods, normalization settings, R-Max thresholds, and seeds, then batches trials through a SLURM array.
+It points at the tuned DQN + R-Max count-oracle workflow, expands a grid of seeds, then batches trials through a SLURM array.
 
 ## Compile
 
 ```bash
-uv run rlflow sweep compile configs/sweeps/16x16_emptyroom_symbolic_cardinal_cornerdistractor__dqn_countbasedoracle.yaml --out runs/sweeps/navix-dqn
+uv run rlflow sweep compile configs/sweeps/emptyroom/seeds__dqn_rmax_countbasedoracle.yaml --out runs/sweeps/navix-dqn
 ```
 
 Compilation writes:
@@ -26,7 +26,7 @@ Compilation writes:
 Run from the cluster checkout so generated commands point at the right project root:
 
 ```bash
-uv run rlflow sweep run configs/sweeps/16x16_emptyroom_symbolic_cardinal_cornerdistractor__dqn_countbasedoracle.yaml --out runs/sweeps/navix-dqn
+uv run rlflow sweep run configs/sweeps/emptyroom/seeds__dqn_rmax_countbasedoracle.yaml --out runs/sweeps/navix-dqn
 ```
 
 The sweep config controls queue pressure:

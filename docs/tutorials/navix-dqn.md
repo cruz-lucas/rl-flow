@@ -3,20 +3,20 @@
 The Navix DQN workflow exercises vector or symbolic observations, replay, a neural Q-network, and the built-in JAX runner. The concrete example is:
 
 ```text
-configs/workflows/empty_room/16x16/corner_distractor/dqn.yaml
+configs/workflows/emptyroom/best/dqn.yaml
 ```
 
 ## Validate and Compile
 
 ```bash
-uv run rlflow workflow validate configs/workflows/empty_room/16x16/corner_distractor/dqn.yaml
-uv run rlflow compile configs/workflows/empty_room/16x16/corner_distractor/dqn.yaml --out runs/examples/navix-dqn
+uv run rlflow workflow validate configs/workflows/emptyroom/best/dqn.yaml
+uv run rlflow compile configs/workflows/emptyroom/best/dqn.yaml --out runs/examples/navix-dqn
 ```
 
 ## Run
 
 ```bash
-uv run rlflow run configs/workflows/empty_room/16x16/corner_distractor/dqn.yaml --backend local --out runs/examples/navix-dqn-local
+uv run rlflow run configs/workflows/emptyroom/best/dqn.yaml --backend local --out runs/examples/navix-dqn-local
 ```
 
 This workflow connects:

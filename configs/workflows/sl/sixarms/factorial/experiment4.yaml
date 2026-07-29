@@ -1,0 +1,76 @@
+name: sl_sixarms_factorial__experiment4
+description: 'S&L sixarms tabular Q-learning factorial cell 4/16 [EO]: epsilon_greedy=1,
+  optimistic_init=1, count_bonus=0, replay=0'
+execution:
+  backend: local
+  cluster: null
+  options: {}
+metadata:
+  experiment_id: sl-sixarms-factorial--experiment4
+nodes:
+- id: env
+  component: builtin.env.sixarms
+  position:
+    x: 120
+    y: 160
+  config:
+    success_probabilities:
+    - 1.0
+    - 0.15
+    - 0.1
+    - 0.05
+    - 0.03
+    - 0.01
+    arm_rewards:
+    - 0.0
+    - 50.0
+    - 133.0
+    - 300.0
+    - 800.0
+    - 1660.0
+    - 6000.0
+- id: agent
+  component: builtin.agent.q_learning_tabular
+  position:
+    x: 120
+    y: 20
+  config:
+    learning_rate: 0.1
+    discount: 0.95
+    initial_q: 120000.0
+    count_bonus_beta: 0.0
+- id: policy
+  component: builtin.policy.epsilon_greedy
+  position:
+    x: 120
+    y: 300
+  config:
+    epsilon: 0.1
+    eval_epsilon: 0.0
+- id: runner
+  component: builtin.runner.tabular_jax
+  position:
+    x: 480
+    y: 160
+  config:
+    seed: 0
+    train_episodes: 1
+    train_steps: 5000
+    max_episode_steps: 5000
+    eval_episodes: 0
+    checkpoint_freq: null
+    checkpoint_dir: checkpoints
+    save_final_checkpoint: false
+edges:
+- from_node: env
+  from_port: environment
+  to_node: runner
+  to_port: environment
+- from_node: agent
+  from_port: agent
+  to_node: runner
+  to_port: agent
+- from_node: policy
+  from_port: policy
+  to_node: runner
+  to_port: policy

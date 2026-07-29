@@ -1,0 +1,20 @@
+name: 16x16_emptyroom_factorial__experiment7_30_seeds
+description: Run 30 seed replicates for 16x16 emptyroom factorial experiment7.
+sweep_id: 16x16-emptyroom-factorial-experiment7-30-seeds
+workflow: ../../../workflows/emptyroom/factorial/experiment7.yaml
+
+method: grid
+
+metric:
+  goal: maximize
+  name: mean_train_return
+
+slurm:
+  max_parallel: 30
+  trials_per_task: 1
+  max_array_tasks: 1000
+
+parameters:
+  seed:
+    target: nodes.runner-4.config.seed
+    values: [30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]

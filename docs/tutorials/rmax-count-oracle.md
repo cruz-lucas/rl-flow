@@ -3,7 +3,7 @@
 The intrinsic-reward example is:
 
 ```text
-configs/workflows/empty_room/16x16/corner_distractor/dqn_rmax_countbasedoracle.yaml
+configs/workflows/emptyroom/best/dqn_rmax_countbasedoracle.yaml
 ```
 
 It connects `builtin.intrinsic.count` to the `knownness_signal` input on `builtin.agent.dqn_rmax_jax`. The intrinsic module acts as an unknown-state detector. Unknown actions can receive optimistic R-Max values during action selection and target updates.
@@ -11,7 +11,7 @@ It connects `builtin.intrinsic.count` to the `knownness_signal` input on `builti
 ## Validate
 
 ```bash
-uv run rlflow workflow validate configs/workflows/empty_room/16x16/corner_distractor/dqn_rmax_countbasedoracle.yaml
+uv run rlflow workflow validate configs/workflows/emptyroom/best/dqn_rmax_countbasedoracle.yaml
 ```
 
 The validator requires DQN-style agents to use `builtin.replay.uniform` on the runner `replay_buffer` port. It also requires `builtin.agent.dqn_rmax_jax` to have a `knownness_signal` input, with the old runner `intrinsic_reward` edge still accepted for compatibility.
@@ -19,7 +19,7 @@ The validator requires DQN-style agents to use `builtin.replay.uniform` on the r
 ## Run Locally
 
 ```bash
-uv run rlflow run configs/workflows/empty_room/16x16/corner_distractor/dqn_rmax_countbasedoracle.yaml --backend local --out runs/examples/rmax-count-oracle
+uv run rlflow run configs/workflows/emptyroom/best/dqn_rmax_countbasedoracle.yaml --backend local --out runs/examples/rmax-count-oracle
 ```
 
 ## Key Configuration Ideas

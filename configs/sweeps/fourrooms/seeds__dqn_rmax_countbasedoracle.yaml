@@ -1,0 +1,27 @@
+name: 19x19_fourrooms__dqn_rmax_countbasedoracle__seeds
+description: Seed replicates over the tuned 19x19 fourrooms dqn_rmax_countbasedoracle workflow.
+sweep_id: 19x19-fourrooms-dqn-rmax-countbasedoracle-seeds
+workflow: ../../workflows/fourrooms/best/dqn_rmax_countbasedoracle.yaml
+method: grid
+metric:
+  goal: maximize
+  last_n: 500
+  name: mean_train_return_last_n
+execution:
+  backend: slurm
+  options:
+    account: aip-machado
+    time: "03:00:00"
+    cpus_per_task: 2
+    mem: 16G
+    modules:
+      - python/3.11
+      - cuda/13.2
+slurm:
+  max_parallel: 8
+  trials_per_task: 50
+  max_array_tasks: 1000
+parameters:
+  seed:
+    target: nodes.runner-4.config.seed
+    values: [30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60]

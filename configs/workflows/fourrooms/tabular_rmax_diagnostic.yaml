@@ -1,4 +1,4 @@
-description: Tabular R-Max diagnostic run for 16x16 Navix EmptyRoom maps after 10 episodes.
+description: Tabular R-Max diagnostic run on 19x19 Navix FourRooms (tabular observations, 50 episodes).
 edges:
 - from_node: environment-1
   from_port: environment
@@ -13,8 +13,8 @@ execution:
   cluster: null
   options: {}
 metadata:
-  experiment_id: 16x16-emptyroom-tabular-cardinal--rmax-diagnostic
-name: 16x16_emptyroom_tabular_cardinal__rmax_diagnostic
+  experiment_id: 19x19-fourrooms-tabular-cardinal--rmax-diagnostic
+name: 19x19_fourrooms_tabular_cardinal__rmax_diagnostic
 nodes:
 - component: navix.env.grid
   config:
