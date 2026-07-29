@@ -48,9 +48,11 @@ class EnvironmentSession:
     config: dict[str, Any]
     seed: int
     env: Any
-    key: jax.Array
-    timestep: Any
+    key: jax.Array | None = None
+    timestep: Any = None
     step: int = 0
+    kind: str = "navix"
+    atari: dict[str, Any] | None = None
 
 
 @router.post("", response_model=EnvironmentSessionSnapshot)
@@ -72,9 +74,14 @@ def step_session(
         raise HTTPException(
             status_code=422, detail=f"Action must be between 0 and {action_count - 1}"
         )
-    session.timestep = session.env.step(
-        session.timestep, np.asarray(payload.action, dtype=np.int32)
-    )
+    if session.kind == "atari":
+        from rlflow_api.services.atari_playground import step_atari
+
+        session.atari = step_atari(session.env, payload.action)
+    else:
+        session.timestep = session.env.step(
+            session.timestep, np.asarray(payload.action, dtype=np.int32)
+        )
     session.step += 1
     return _snapshot(session_id, session)
 
@@ -82,8 +89,13 @@ def step_session(
 @router.post("/{session_id}/reset", response_model=EnvironmentSessionSnapshot)
 def reset_session(session_id: str, request: Request) -> EnvironmentSessionSnapshot:
     session = _get_session(session_id, request)
-    session.key, reset_key = jax.random.split(session.key)
-    session.timestep = session.env.reset(reset_key)
+    if session.kind == "atari":
+        from rlflow_api.services.atari_playground import reset_atari
+
+        session.atari = reset_atari(session.env, session.seed)
+    else:
+        session.key, reset_key = jax.random.split(session.key)
+        session.timestep = session.env.reset(reset_key)
     session.step = 0
     return _snapshot(session_id, session)
 
@@ -91,9 +103,14 @@ def reset_session(session_id: str, request: Request) -> EnvironmentSessionSnapsh
 @router.get("/{session_id}/export.pdf")
 def export_pdf(session_id: str, request: Request) -> Response:
     session = _get_session(session_id, request)
-    observation = np.asarray(jax.device_get(session.timestep.observation))
-    symbolic = _visible_symbolic_grid(session, observation)
-    pdf = _render_pdf(symbolic)
+    if session.kind == "atari":
+        from rlflow_api.services.atari_playground import frame_pdf
+
+        pdf = frame_pdf(np.asarray(session.atari["frame"]))
+    else:
+        observation = np.asarray(jax.device_get(session.timestep.observation))
+        symbolic = _visible_symbolic_grid(session, observation)
+        pdf = _render_pdf(symbolic)
     filename = f"{session.component_id.replace('.', '_')}_step_{session.step}.pdf"
     return Response(
         content=pdf,
@@ -108,9 +125,12 @@ def ensure_environment_session_store(app: Any) -> None:
 
 
 def _build_session(payload: EnvironmentSessionCreate, request: Request) -> EnvironmentSession:
+    if payload.component_id == "builtin.env.atari":
+        return _build_atari_session(payload, request)
     if payload.component_id != "navix.env.grid":
         raise HTTPException(
-            status_code=422, detail="Environment playground currently supports navix.env.grid"
+            status_code=422,
+            detail="Environment playground supports navix.env.grid and builtin.env.atari",
         )
 
     component = request.app.state.registry.get(payload.component_id)
@@ -133,6 +153,28 @@ def _build_session(payload: EnvironmentSessionCreate, request: Request) -> Envir
     )
 
 
+def _build_atari_session(payload: EnvironmentSessionCreate, request: Request) -> EnvironmentSession:
+    from rlflow_api.services.atari_playground import build_atari_env, reset_atari
+
+    component = request.app.state.registry.get(payload.component_id)
+    config = {**component.defaults, **payload.config}
+    try:
+        env = build_atari_env(config)
+        atari = reset_atari(env, payload.seed)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422, detail=f"Could not start Atari session: {exc}"
+        ) from exc
+    return EnvironmentSession(
+        component_id=payload.component_id,
+        config=config,
+        seed=payload.seed,
+        env=env,
+        kind="atari",
+        atari=atari,
+    )
+
+
 def _get_session(session_id: str, request: Request) -> EnvironmentSession:
     session = request.app.state.environment_sessions.get(session_id)
     if session is None:
@@ -141,6 +183,8 @@ def _get_session(session_id: str, request: Request) -> EnvironmentSession:
 
 
 def _snapshot(session_id: str, session: EnvironmentSession) -> EnvironmentSessionSnapshot:
+    if session.kind == "atari":
+        return _atari_snapshot(session_id, session)
     timestep = session.timestep
     observation = np.asarray(jax.device_get(timestep.observation))
     observation_preview, observation_truncated = _observation_preview(observation)
@@ -162,6 +206,31 @@ def _snapshot(session_id: str, session: EnvironmentSession) -> EnvironmentSessio
         observation_preview=observation_preview,
         observation_truncated=observation_truncated,
         svg=_render_svg(_visible_symbolic_grid(session, observation)),
+    )
+
+
+def _atari_snapshot(session_id: str, session: EnvironmentSession) -> EnvironmentSessionSnapshot:
+    from rlflow_api.services.atari_playground import atari_action_labels, frame_svg
+
+    state = session.atari or {}
+    observation = np.asarray(state["observation"])
+    observation_preview, observation_truncated = _observation_preview(observation)
+    return EnvironmentSessionSnapshot(
+        session_id=session_id,
+        component_id=session.component_id,
+        config=session.config,
+        step=session.step,
+        reward=float(state["reward"]),
+        terminated=bool(state["terminated"]),
+        truncated=bool(state["truncated"]),
+        done=bool(state["terminated"] or state["truncated"]),
+        action_count=int(session.env.action_space.n),
+        action_labels=atari_action_labels(session.env),
+        observation_shape=list(observation.shape),
+        observation_dtype=str(observation.dtype),
+        observation_preview=observation_preview,
+        observation_truncated=observation_truncated,
+        svg=frame_svg(np.asarray(state["frame"])),
     )
 
 

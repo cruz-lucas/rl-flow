@@ -1,0 +1,28 @@
+name: montezuma__dqn_rmax_cfn__seeds
+description: Seed replicates over the Montezuma's Revenge dqn_rmax_cfn workflow.
+sweep_id: montezuma-dqn-rmax-cfn-seeds
+workflow: ../../workflows/atari/montezuma__dqn_rmax_cfn.yaml
+method: grid
+metric:
+  goal: maximize
+  last_n: 100
+  name: mean_train_return_last_10
+execution:
+  backend: slurm
+  options:
+    account: aip-machado
+    time: "24:00:00"
+    cpus_per_task: 8
+    mem: 32G
+    gres: "gpu:1"
+    modules:
+      - python/3.11
+      - cuda/13.2
+slurm:
+  max_parallel: 10
+  trials_per_task: 1
+  max_array_tasks: 1000
+parameters:
+  seed:
+    target: nodes.agent-1.config.seed
+    values: [0, 1, 2, 3, 4]

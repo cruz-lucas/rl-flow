@@ -1,0 +1,119 @@
+description: >-
+  DQN + R-Max + CFN on Montezuma's Revenge (real ALE via envpool). Nature-CNN
+  Q-network with R-Max optimism driven by a CFN knownness signal. Runs through the
+  non-JAX runtime delegate (rlflow_builtin.atari.training:run_training). Mirrors the
+  fourrooms dqn_rmax_cfn wiring: env / replay / agent feed the runner and the CFN
+  intrinsic feeds the agent's knownness_signal port.
+name: montezuma__dqn_rmax_cfn
+metadata:
+  experiment_id: montezuma-revenge--dqn-rmax-cfn
+edges:
+- from_node: environment-2
+  from_port: environment
+  to_node: runner-4
+  to_port: environment
+- from_node: replay_buffer-3
+  from_port: replay_buffer
+  to_node: runner-4
+  to_port: replay_buffer
+- from_node: agent-1
+  from_port: agent
+  to_node: runner-4
+  to_port: agent
+- from_node: intrinsic_reward-5
+  from_port: intrinsic_reward
+  to_node: agent-1
+  to_port: knownness_signal
+execution:
+  backend: slurm
+  options:
+    account: aip-machado
+    time: "24:00:00"
+    cpus_per_task: 8
+    mem: 32G
+    gres: "gpu:1"
+    modules:
+      - python/3.11
+      - cuda/13.2
+nodes:
+- id: environment-2
+  component: builtin.env.atari
+  config:
+    task_id: MontezumaRevenge-v5
+    backend: envpool
+    num_envs: 8
+    frame_skip: 4
+    frame_stack: 4
+    img_height: 84
+    img_width: 84
+    gray_scale: true
+    repeat_action_probability: 0.25
+    episodic_life: false
+    noop_max: 30
+    max_episode_steps: null
+    reward_clip: true
+    full_action_space: false
+- id: replay_buffer-3
+  component: builtin.replay.uniform
+  config:
+    capacity: 100000
+    batch_size: 32
+    min_size: 1600
+    updates_per_step: 1
+    intrinsic_updates_per_step: 1
+    q_network_updates_per_step: 1
+    save_dataset_path: ''
+- id: runner-4
+  component: builtin.runner.tabular_jax
+  config:
+    seed: 0
+    train_episodes: 10000
+    train_steps: 2000000
+    max_episode_steps: 108000
+    eval_episodes: 0
+    checkpoint_dir: checkpoints
+    checkpoint_freq: null
+    save_final_checkpoint: false
+- id: intrinsic_reward-5
+  component: builtin.intrinsic.cfn
+  config:
+    cfn_action_conditioning: output
+    cfn_activation: relu
+    cfn_bonus_exponent: 0.5
+    cfn_final_tanh: false
+    cfn_hidden_units:
+    - 512
+    cfn_learning_rate: 6.25e-5
+    cfn_optimizer: null
+    cfn_output_dim: 128
+    cfn_prior_scale: 1.0
+    cfn_update_period: 1
+    cfn_use_random_prior: true
+    intrinsic_reward_center: false
+    intrinsic_reward_clip: 100
+    intrinsic_reward_epsilon: 1.0
+    intrinsic_reward_scale: 1.0
+    intrinsic_stats_decay: 0.99
+- id: agent-1
+  component: builtin.agent.dqn_rmax_atari
+  config:
+    activation: relu
+    discount: 0.99
+    double_q: true
+    hidden_units:
+    - 512
+    learning_rate: 6.25e-5
+    loss_type: huber
+    huber_delta: 1.0
+    max_grad_norm: 10.0
+    optimizer: adam
+    update_frequency: 4
+    target_update_frequency: 8000
+    epsilon_start: 1.0
+    epsilon_end: 0.01
+    epsilon_decay_steps: 250000
+    eval_epsilon: 0.001
+    rmax_bonus_threshold: 0.6
+    rmax_decision_v_max: 5.0
+    rmax_update_v_max: 0.5
+    seed: 0

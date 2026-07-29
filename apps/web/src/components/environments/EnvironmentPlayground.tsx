@@ -10,11 +10,15 @@ interface EnvironmentPlaygroundProps {
   isLoading?: boolean;
 }
 
+// Environment components the interactive playground can load, step, and render.
+const RENDERABLE_ENVIRONMENT_IDS = new Set(["navix.env.grid", "builtin.env.atari"]);
+
 export function EnvironmentPlayground({ components, isLoading }: EnvironmentPlaygroundProps) {
   const renderableEnvironments = useMemo(
     () =>
       components.filter(
-        (component) => component.kind === "environment" && component.id === "navix.env.grid",
+        (component) =>
+          component.kind === "environment" && RENDERABLE_ENVIRONMENT_IDS.has(component.id),
       ),
     [components],
   );

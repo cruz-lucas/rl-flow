@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from rlflow.schemas.component import ComponentSpec
+from rlflow_builtin.atari.components import atari_components
 from rlflow_builtin.dqn.components import dqn_agent_components, intrinsic_reward_components
 from rlflow_builtin.environments import environment_components
 from rlflow_builtin.policies import policy_components
@@ -13,6 +14,7 @@ def components() -> list[ComponentSpec]:
     return [
         *agent_components(),
         *dqn_agent_components(),
+        *atari_components(),
         *intrinsic_reward_components(),
         *environment_components(),
         *policy_components(),
