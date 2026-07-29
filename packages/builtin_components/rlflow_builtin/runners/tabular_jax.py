@@ -148,7 +148,7 @@ def run_compiled(
     agent = agent_config(agent_node.component, resolved[agent_node.id])
     policy = None
     policy_component = None
-    if agent.algorithm != "rmax":
+    if agent.algorithm in ("q_learning", "sarsa"):
         if "policy" not in node_ids:
             raise ValueError("builtin tabular Q-learning and Sarsa agents require a policy input")
         policy_node = workflow_node(workflow, node_ids["policy"])
@@ -314,6 +314,7 @@ def _write_tabular_outputs(
         "train_episodes": int(runner_settings["train_episodes"]),
         "train_steps": runner_settings.get("train_steps"),
         **_train_return_metrics(result.train_returns),
+        "cumulative_train_reward": float(np.sum(result.train_returns)),
         "mean_train_discounted_return": _mean_all(result.train_discounted_returns),
         "mean_eval_return": (
             float(np.mean(result.eval_returns)) if len(result.eval_returns) else None

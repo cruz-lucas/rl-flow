@@ -6,7 +6,7 @@ from typing import Literal, NamedTuple
 import jax
 import numpy as np
 
-AlgorithmName = Literal["q_learning", "sarsa", "rmax"]
+AlgorithmName = Literal["q_learning", "sarsa", "rmax", "mbie_eb", "replay_rmax", "replay_mbie_eb"]
 PolicyName = Literal["epsilon_greedy", "ucb", "softmax"]
 EnvironmentName = Literal["gridworld", "riverswim", "sixarms", "navix"]
 BufferName = Literal["none", "uniform"]
@@ -21,6 +21,11 @@ class AgentConfig:
     known_count_threshold: int = 1
     rmax_v_max: float = 1.0
     planning_iterations: int = 25
+    # Count-based intrinsic reward for tabular Q-learning (0.0 = off): the online
+    # and replay TD targets add ``count_bonus_beta / sqrt(max(N(s,a), 1))``.
+    count_bonus_beta: float = 0.0
+    # MBIE-EB exploration-bonus coefficient (used by mbie_eb / replay_mbie_eb).
+    mbie_beta: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -87,6 +92,11 @@ class BufferConfig:
     load_dataset_path: str = ""
     offline_only: bool = False
     offline_updates: int = 0
+    # Online "replay until convergence": each env step keeps sampling minibatches
+    # until max|ΔQ| < convergence_tol or max_replay_iters passes are reached.
+    replay_until_convergence: bool = False
+    convergence_tol: float = 1e-3
+    max_replay_iters: int = 100
 
     @property
     def enabled(self) -> bool:

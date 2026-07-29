@@ -65,7 +65,9 @@ def riverswim_environment(config: dict[str, Any]) -> EnvironmentConfig:
     if start_state < 0 or start_state >= num_states:
         raise ValueError("builtin.env.riverswim start_state is outside the chain")
 
-    random_start_states = tuple(state for state in (1, 2) if state < num_states)
+    # Strehl & Littman start the agent in one of the two leftmost states with equal
+    # probability (0-indexed states 0 and 1).
+    random_start_states = tuple(state for state in (0, 1) if state < num_states)
     return EnvironmentConfig(
         name="riverswim",
         num_states=num_states,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import NamedTuple
 
 import jax
@@ -124,6 +125,25 @@ def run_tabular_training(
             return _run_navix_rmax_tabular_training(agent, environment, runner)
         return _run_rmax_tabular_training(agent, environment, runner)
 
+    if agent.algorithm == "mbie_eb":
+        if replay_buffer.enabled:
+            raise ValueError("builtin.agent.mbie_eb_tabular does not support replay buffers")
+        if environment.name == "navix":
+            raise ValueError("builtin.agent.mbie_eb_tabular does not support navix environments")
+        return _run_mbie_tabular_training(agent, environment, runner)
+
+    if agent.algorithm in ("replay_rmax", "replay_mbie_eb"):
+        if not replay_buffer.enabled:
+            raise ValueError(
+                "builtin.agent.replay_rmax_tabular / replay_mbie_eb_tabular require a "
+                "builtin.replay.tabular_uniform input"
+            )
+        if environment.name == "navix":
+            raise ValueError(
+                "replay-based optimistic tabular agents do not support navix environments"
+            )
+        return _run_replay_optimistic_training(agent, environment, runner, replay_buffer)
+
     if policy is None:
         raise ValueError("builtin tabular Q-learning and Sarsa agents require a policy input")
     if replay_buffer.offline_only:
@@ -202,6 +222,7 @@ def run_tabular_training(
                     next_action_key,
                     environment.num_actions,
                 )
+                update_reward = _apply_count_bonus(agent, reward, updated_counts, state, action)
                 updated_q, td_loss = apply_td_update(
                     agent,
                     policy,
@@ -209,7 +230,7 @@ def run_tabular_training(
                     updated_counts,
                     state,
                     action,
-                    reward,
+                    update_reward,
                     next_state,
                     terminal,
                     next_action_key,
@@ -377,10 +398,11 @@ def run_tabular_training(
     )
 
 
-def _run_rmax_tabular_training(
+def _run_model_based_training(
     agent: AgentConfig,
     environment: EnvironmentConfig,
     runner: RunnerConfig,
+    observe_fn: Callable[..., tuple[RMaxModelState, jax.Array]],
 ) -> TabularRunResult:
     model_state = _initial_rmax_model(agent, environment)
     key = jax.random.PRNGKey(runner.seed)
@@ -424,7 +446,7 @@ def _run_rmax_tabular_training(
                 key, action_key, env_key = jax.random.split(key, 3)
                 action = _rmax_action(model.q_table, state, action_key, environment.num_actions)
                 next_state, reward, terminal = env_step(state, action, env_key)
-                updated_model, q_delta = _rmax_observe_transition(
+                updated_model, q_delta = observe_fn(
                     agent,
                     model,
                     state,
@@ -531,6 +553,411 @@ def _run_rmax_tabular_training(
     (final_model, key), train_history = run_train_scan(model_state, key)
     q_final = final_model.q_table
     action_counts_final = final_model.action_counts
+    eval_arrays = _run_eval_scan(evaluate_episode, key, runner.eval_episodes)
+    return _tabular_result(q_final, action_counts_final, train_history, eval_arrays)
+
+
+def _run_rmax_tabular_training(
+    agent: AgentConfig,
+    environment: EnvironmentConfig,
+    runner: RunnerConfig,
+) -> TabularRunResult:
+    return _run_model_based_training(agent, environment, runner, _rmax_observe_transition)
+
+
+def _run_mbie_tabular_training(
+    agent: AgentConfig,
+    environment: EnvironmentConfig,
+    runner: RunnerConfig,
+) -> TabularRunResult:
+    return _run_model_based_training(agent, environment, runner, _mbie_observe_transition)
+
+
+def _mbie_observe_transition(
+    agent: AgentConfig,
+    model: RMaxModelState,
+    state: jax.Array,
+    action: jax.Array,
+    reward: jax.Array,
+    next_state: jax.Array,
+    terminal: jax.Array,
+) -> tuple[RMaxModelState, jax.Array]:
+    """MBIE-EB model update: every visit accumulates the empirical model and the
+    optimistic value function is re-planned (the ``beta/sqrt(N)`` bonus shrinks with
+    each visit, so unlike R-Max we re-plan on every step rather than at a threshold)."""
+    action_counts = model.action_counts.at[state, action].add(1.0)
+    model_counts = model.model_counts.at[state, action].add(1.0)
+    reward_sums = model.reward_sums.at[state, action].add(reward.astype(jnp.float32))
+    nonterminal = jnp.logical_not(terminal).astype(jnp.float32)
+    transition_counts = model.transition_counts.at[state, action, next_state].add(nonterminal)
+    q_table = _mbie_plan_q(agent, model_counts, reward_sums, transition_counts, model.q_table)
+    q_delta = jnp.abs(q_table[state, action] - model.q_table[state, action])
+    return (
+        RMaxModelState(
+            q_table=q_table,
+            action_counts=action_counts,
+            model_counts=model_counts,
+            reward_sums=reward_sums,
+            transition_counts=transition_counts,
+        ),
+        q_delta,
+    )
+
+
+def _mbie_plan_q(
+    agent: AgentConfig,
+    model_counts: jax.Array,
+    reward_sums: jax.Array,
+    transition_counts: jax.Array,
+    initial_q: jax.Array,
+) -> jax.Array:
+    """Value iteration for MBIE-EB: visited (s,a) use the empirical model plus a
+    ``beta/sqrt(N(s,a))`` exploration bonus; unvisited (s,a) stay optimistic (V_max)."""
+    known_mask = model_counts > 0.0
+    denom = jnp.maximum(model_counts, 1.0)
+    mean_rewards = reward_sums / denom
+    bonus = jnp.where(known_mask, agent.mbie_beta / jnp.sqrt(denom), 0.0)
+
+    def planning_step(q_table, _):
+        values = jnp.max(q_table, axis=1)
+        expected_next_values = jnp.einsum("san,n->sa", transition_counts, values) / denom
+        planned_q = mean_rewards + bonus + agent.discount * expected_next_values
+        q_table = jnp.where(known_mask, planned_q, agent.rmax_v_max)
+        return q_table, None
+
+    q_table, _ = jax.lax.scan(
+        planning_step,
+        initial_q,
+        xs=None,
+        length=agent.planning_iterations,
+    )
+    return q_table
+
+
+def _known_mask(agent: AgentConfig, counts: jax.Array) -> jax.Array:
+    """Optimism predicate for the replay-based agents (Algorithm 1 rule ``C``).
+
+    ``replay_rmax``  -> known when ``N(s,a) >= m`` (``known_count_threshold``);
+    ``replay_mbie_eb`` -> known when ``N(s,a) > 0``. ``agent.algorithm`` is a static
+    Python string, so the branch is resolved at trace time."""
+    if agent.algorithm == "replay_rmax":
+        return counts >= float(agent.known_count_threshold)
+    return counts > 0.0
+
+
+def _optimistic_values(agent: AgentConfig, q_table: jax.Array, counts: jax.Array) -> jax.Array:
+    """U-table (Algorithm 1 rule ``U``): ``Q`` where known, ``V_max`` otherwise."""
+    return jnp.where(_known_mask(agent, counts), q_table, agent.rmax_v_max)
+
+
+def _optimistic_bonus(
+    agent: AgentConfig, counts: jax.Array, state: jax.Array, action: jax.Array
+) -> jax.Array:
+    """Target bonus ``beta/sqrt(max(N(s,a),1))`` (MBIE variant; 0 for the R-Max variant
+    since ``mbie_beta`` is 0.0 there)."""
+    if agent.mbie_beta == 0.0:
+        return jnp.asarray(0.0, dtype=jnp.float32)
+    visit = jnp.maximum(counts[state, action], 1.0)
+    return agent.mbie_beta / jnp.sqrt(visit)
+
+
+def _update_optimistic_transition(
+    agent: AgentConfig,
+    counts: jax.Array,
+    carry: tuple[jax.Array, jax.Array],
+    transition: TransitionBatch,
+    num_actions: int,
+) -> tuple[tuple[jax.Array, jax.Array], jax.Array]:
+    """Predicate-gated TD update with optimistic bootstrap (Algorithm 1 lines 13-16).
+
+    ``counts`` is held fixed across a replay pass; only known ``(s,a)`` are updated.
+    The bootstrap uses ``max_{a'} U(s',a')`` so unknown successors contribute ``V_max``."""
+    del num_actions
+    q_table, key = carry
+    state = transition.observations
+    action = transition.actions
+    reward = transition.rewards
+    next_state = transition.next_observations
+    terminal = transition.terminals.astype(jnp.float32)
+
+    next_u_row = jnp.where(
+        _known_mask(agent, counts[next_state]), q_table[next_state], agent.rmax_v_max
+    )
+    next_value = jnp.max(next_u_row)
+    bonus = _optimistic_bonus(agent, counts, state, action)
+    target = reward + bonus + agent.discount * next_value * (1.0 - terminal)
+
+    q_old = q_table[state, action]
+    predicate = _known_mask(agent, counts[state, action])
+    new_value = q_old + agent.learning_rate * (target - q_old)
+    q_table = q_table.at[state, action].set(jnp.where(predicate, new_value, q_old))
+    loss = jnp.where(predicate, jnp.abs(target - q_old), 0.0)
+    return (q_table, key), loss
+
+
+def _replay_optimistic(
+    agent: AgentConfig,
+    replay_buffer: BufferConfig,
+    buffer_state: ReplayBufferState,
+    q_table: jax.Array,
+    counts: jax.Array,
+    key: jax.Array,
+    num_actions: int,
+) -> tuple[jax.Array, jax.Array]:
+    """Replay the buffer for one env step: until convergence (max|ΔQ| < tol) when
+    ``replay_until_convergence``, else ``max(updates_per_step, 1)`` minibatch passes."""
+    batch_size = replay_buffer.batch_size
+
+    def one_batch(q_in: jax.Array, batch_key: jax.Array):
+        batch_key, sample_key, update_key = jax.random.split(batch_key, 3)
+        batch = sample_batch(buffer_state, sample_key, batch_size)
+        (q_out, _), losses = jax.lax.scan(
+            lambda carry, transition: _update_optimistic_transition(
+                agent, counts, carry, transition, num_actions
+            ),
+            (q_in, update_key),
+            batch,
+        )
+        return q_out, batch_key, jnp.mean(losses)
+
+    def do_replay(args):
+        q_in, replay_key = args
+        if replay_buffer.replay_until_convergence:
+            tol = replay_buffer.convergence_tol
+            max_iters = replay_buffer.max_replay_iters
+
+            def cond(state):
+                _, _, iters, delta = state
+                return jnp.logical_and(iters < max_iters, delta > tol)
+
+            def body(state):
+                q_cur, batch_key, iters, _ = state
+                q_next, batch_key, _ = one_batch(q_cur, batch_key)
+                delta = jnp.max(jnp.abs(q_next - q_cur))
+                return (q_next, batch_key, iters + 1, delta)
+
+            init = (
+                q_in,
+                replay_key,
+                jnp.asarray(0, dtype=jnp.int32),
+                jnp.asarray(jnp.inf, dtype=jnp.float32),
+            )
+            q_out, _, _, delta_out = jax.lax.while_loop(cond, body, init)
+            return q_out, delta_out
+
+        def scan_body(carry, _):
+            q_cur, batch_key = carry
+            q_next, batch_key, loss = one_batch(q_cur, batch_key)
+            return (q_next, batch_key), loss
+
+        (q_out, _), losses = jax.lax.scan(
+            scan_body,
+            (q_in, replay_key),
+            xs=None,
+            length=max(replay_buffer.updates_per_step, 1),
+        )
+        return q_out, jnp.mean(losses)
+
+    ready = buffer_state.size >= replay_buffer.min_size
+    return jax.lax.cond(
+        ready,
+        do_replay,
+        lambda args: (args[0], jnp.asarray(0.0, dtype=jnp.float32)),
+        (q_table, key),
+    )
+
+
+def _run_replay_optimistic_training(
+    agent: AgentConfig,
+    environment: EnvironmentConfig,
+    runner: RunnerConfig,
+    replay_buffer: BufferConfig,
+) -> TabularRunResult:
+    """Algorithm 1 (Replay-Based Optimistic Q-Learning). ``Q`` starts at 0; optimism is
+    injected through ``U(s,a)=V_max`` for unknown ``(s,a)``. Each env step acts greedily
+    on ``U``, stores the transition, then replays the buffer, updating only known
+    ``(s,a)`` toward optimistic bootstrap targets."""
+    q_table = jnp.zeros((environment.num_states, environment.num_actions), dtype=jnp.float32)
+    action_counts = jnp.zeros_like(q_table)
+    buffer_state = initial_replay_buffer(replay_buffer)
+    key = jax.random.PRNGKey(runner.seed)
+    env_step = make_step_fn(environment)
+    train_episodes = _runner_train_episodes(runner)
+
+    def train_episode(carry, episode_idx):
+        del episode_idx
+        q, counts, buffer_state, scan_key = carry
+        scan_key, episode_key, reset_key = jax.random.split(scan_key, 3)
+        state = initial_state(environment, reset_key)
+        episode_return = jnp.asarray(0.0, dtype=jnp.float32)
+        episode_discounted_return = jnp.asarray(0.0, dtype=jnp.float32)
+        episode_length = jnp.asarray(0, dtype=jnp.int32)
+        episode_loss = jnp.asarray(0.0, dtype=jnp.float32)
+        done = jnp.asarray(False)
+
+        def step_fn(step_carry, _):
+            (
+                q,
+                counts,
+                buffer_state,
+                key,
+                state,
+                episode_return,
+                episode_discounted_return,
+                episode_length,
+                episode_loss,
+                done,
+            ) = step_carry
+
+            def active_step(active_carry):
+                (
+                    q,
+                    counts,
+                    buffer_state,
+                    key,
+                    state,
+                    episode_return,
+                    episode_discounted_return,
+                    episode_length,
+                    episode_loss,
+                    _,
+                ) = active_carry
+                key, action_key, env_key, replay_key = jax.random.split(key, 4)
+                u_table = _optimistic_values(agent, q, counts)
+                action = greedy(u_table[state], action_key, environment.num_actions)
+                next_state, reward, terminal = env_step(state, action, env_key)
+                counts = counts.at[state, action].add(1.0)
+                buffer_state = push_transition(
+                    buffer_state, state, action, reward, next_state, terminal
+                )
+                q, replay_loss = _replay_optimistic(
+                    agent,
+                    replay_buffer,
+                    buffer_state,
+                    q,
+                    counts,
+                    replay_key,
+                    environment.num_actions,
+                )
+                return (
+                    q,
+                    counts,
+                    buffer_state,
+                    key,
+                    next_state,
+                    episode_return + reward,
+                    episode_discounted_return + (agent.discount**episode_length) * reward,
+                    episode_length + 1,
+                    episode_loss + replay_loss,
+                    terminal,
+                )
+
+            return jax.lax.cond(
+                done,
+                lambda inactive_carry: inactive_carry,
+                active_step,
+                step_carry,
+            ), None
+
+        carry_out, _ = jax.lax.scan(
+            step_fn,
+            (
+                q,
+                counts,
+                buffer_state,
+                episode_key,
+                state,
+                episode_return,
+                episode_discounted_return,
+                episode_length,
+                episode_loss,
+                done,
+            ),
+            xs=None,
+            length=runner.max_episode_steps,
+        )
+        (
+            q,
+            counts,
+            buffer_state,
+            _,
+            _,
+            episode_return,
+            episode_discounted_return,
+            episode_length,
+            episode_loss,
+            _,
+        ) = carry_out
+        mean_loss = episode_loss / jnp.maximum(episode_length, 1)
+        return (q, counts, buffer_state, scan_key), (
+            episode_return,
+            episode_discounted_return,
+            episode_length,
+            mean_loss,
+        )
+
+    def evaluate_episode(scan_key):
+        scan_key, episode_key, reset_key = jax.random.split(scan_key, 3)
+        state = initial_state(environment, reset_key)
+        episode_return = jnp.asarray(0.0, dtype=jnp.float32)
+        episode_discounted_return = jnp.asarray(0.0, dtype=jnp.float32)
+        episode_length = jnp.asarray(0, dtype=jnp.int32)
+        done = jnp.asarray(False)
+
+        def step_fn(step_carry, _):
+            key, state, episode_return, episode_discounted_return, episode_length, done = step_carry
+
+            def active_step(active_carry):
+                key, state, episode_return, episode_discounted_return, episode_length, _ = (
+                    active_carry
+                )
+                key, action_key, env_key = jax.random.split(key, 3)
+                u_row = jnp.where(
+                    _known_mask(agent, action_counts_final[state]),
+                    q_final[state],
+                    agent.rmax_v_max,
+                )
+                action = greedy(u_row, action_key, environment.num_actions)
+                next_state, reward, terminal = env_step(state, action, env_key)
+                return (
+                    key,
+                    next_state,
+                    episode_return + reward,
+                    episode_discounted_return + (agent.discount**episode_length) * reward,
+                    episode_length + 1,
+                    terminal,
+                )
+
+            return jax.lax.cond(
+                done,
+                lambda inactive_carry: inactive_carry,
+                active_step,
+                step_carry,
+            ), None
+
+        carry_out, _ = jax.lax.scan(
+            step_fn,
+            (episode_key, state, episode_return, episode_discounted_return, episode_length, done),
+            xs=None,
+            length=runner.max_episode_steps,
+        )
+        _, _, episode_return, episode_discounted_return, episode_length, _ = carry_out
+        return scan_key, (episode_return, episode_discounted_return, episode_length)
+
+    @jax.jit
+    def run_train_scan(initial_q, initial_counts, initial_buffer, initial_key):
+        return jax.lax.scan(
+            train_episode,
+            (initial_q, initial_counts, initial_buffer, initial_key),
+            jnp.arange(train_episodes),
+        )
+
+    (q_final, action_counts_final, _, key), train_history = run_train_scan(
+        q_table,
+        action_counts,
+        buffer_state,
+        key,
+    )
     eval_arrays = _run_eval_scan(evaluate_episode, key, runner.eval_episodes)
     return _tabular_result(q_final, action_counts_final, train_history, eval_arrays)
 
@@ -1343,6 +1770,24 @@ def _runner_train_episodes(runner: RunnerConfig) -> int:
     return max(1, int(np.ceil(runner.train_steps / runner.max_episode_steps)))
 
 
+def _apply_count_bonus(
+    agent: AgentConfig,
+    reward: jax.Array,
+    counts: jax.Array,
+    state: jax.Array,
+    action: jax.Array,
+) -> jax.Array:
+    """Add the count-based intrinsic bonus ``beta / sqrt(max(N(s,a), 1))`` to a reward.
+
+    ``count_bonus_beta`` is a static Python float, so at 0.0 this returns ``reward``
+    unchanged (identical graph) — plain Q-learning is preserved exactly.
+    """
+    if agent.count_bonus_beta == 0.0:
+        return reward
+    visit = jnp.maximum(counts[state, action], 1.0)
+    return reward + agent.count_bonus_beta / jnp.sqrt(visit)
+
+
 def _push_if_enabled(
     replay_buffer: BufferConfig,
     buffer_state: ReplayBufferState,
@@ -1367,39 +1812,75 @@ def _replay_if_ready(
     key: jax.Array,
     num_actions: int,
 ) -> tuple[jax.Array, jax.Array]:
-    if not replay_buffer.enabled or replay_buffer.updates_per_step <= 0:
+    if not replay_buffer.enabled:
+        return q_table, jnp.asarray(0.0, dtype=jnp.float32)
+
+    ready = buffer_state.size >= replay_buffer.min_size
+
+    def _replay_batch(carry, _):
+        q_batch, batch_key = carry
+        batch_key, sample_key, td_key = jax.random.split(batch_key, 3)
+        batch = sample_batch(buffer_state, sample_key, replay_buffer.batch_size)
+        (q_next, _), losses = jax.lax.scan(
+            lambda update_carry, transition: _update_replay_transition(
+                agent,
+                policy,
+                action_counts,
+                update_carry,
+                transition,
+                num_actions,
+            ),
+            (q_batch, td_key),
+            batch,
+        )
+        return (q_next, batch_key), jnp.mean(losses)
+
+    if replay_buffer.replay_until_convergence:
+        tol = replay_buffer.convergence_tol
+        max_iters = replay_buffer.max_replay_iters
+
+        def replay_until_converged(args):
+            q_in, replay_key = args
+
+            def cond(state):
+                _, _, iters, delta = state
+                return jnp.logical_and(iters < max_iters, delta > tol)
+
+            def body(state):
+                q_cur, batch_key, iters, _ = state
+                (q_next, batch_key), _ = _replay_batch((q_cur, batch_key), None)
+                delta = jnp.max(jnp.abs(q_next - q_cur))
+                return (q_next, batch_key, iters + 1, delta)
+
+            init = (
+                q_in,
+                replay_key,
+                jnp.asarray(0, dtype=jnp.int32),
+                jnp.asarray(jnp.inf, dtype=jnp.float32),
+            )
+            q_out, _, _, delta_out = jax.lax.while_loop(cond, body, init)
+            return q_out, delta_out
+
+        return jax.lax.cond(
+            ready,
+            replay_until_converged,
+            lambda args: (args[0], jnp.asarray(0.0, dtype=jnp.float32)),
+            (q_table, key),
+        )
+
+    if replay_buffer.updates_per_step <= 0:
         return q_table, jnp.asarray(0.0, dtype=jnp.float32)
 
     def replay_updates(args):
         q_in, replay_key = args
-
-        def update_batch(carry, _):
-            q_batch, batch_key = carry
-            batch_key, sample_key, td_key = jax.random.split(batch_key, 3)
-            batch = sample_batch(buffer_state, sample_key, replay_buffer.batch_size)
-            (q_batch, _), losses = jax.lax.scan(
-                lambda update_carry, transition: _update_replay_transition(
-                    agent,
-                    policy,
-                    action_counts,
-                    update_carry,
-                    transition,
-                    num_actions,
-                ),
-                (q_batch, td_key),
-                batch,
-            )
-            return (q_batch, batch_key), jnp.mean(losses)
-
         (q_out, _), replay_losses = jax.lax.scan(
-            update_batch,
+            _replay_batch,
             (q_in, replay_key),
             xs=None,
             length=replay_buffer.updates_per_step,
         )
         return q_out, jnp.mean(replay_losses)
 
-    ready = buffer_state.size >= replay_buffer.min_size
     return jax.lax.cond(
         ready,
         replay_updates,
@@ -1418,6 +1899,13 @@ def _update_replay_transition(
 ) -> tuple[tuple[jax.Array, jax.Array], jax.Array]:
     q_table, key = carry
     key, update_key = jax.random.split(key)
+    update_reward = _apply_count_bonus(
+        agent,
+        transition.rewards,
+        action_counts,
+        transition.observations,
+        transition.actions,
+    )
     updated_q, td_loss = apply_td_update(
         agent,
         policy,
@@ -1425,7 +1913,7 @@ def _update_replay_transition(
         action_counts,
         transition.observations,
         transition.actions,
-        transition.rewards,
+        update_reward,
         transition.next_observations,
         transition.terminals,
         update_key,
@@ -1437,7 +1925,10 @@ def _update_replay_transition(
 def _combine_losses(
     replay_buffer: BufferConfig, td_loss: jax.Array, replay_loss: jax.Array
 ) -> jax.Array:
-    if not replay_buffer.enabled or replay_buffer.updates_per_step <= 0:
+    replay_active = replay_buffer.enabled and (
+        replay_buffer.replay_until_convergence or replay_buffer.updates_per_step > 0
+    )
+    if not replay_active:
         return td_loss
     denominator = jnp.where(replay_loss > 0.0, 2.0, 1.0)
     return (td_loss + replay_loss) / denominator

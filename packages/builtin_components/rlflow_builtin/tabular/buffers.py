@@ -37,6 +37,9 @@ def buffer_config(component_id: str, config: dict[str, Any]) -> BufferConfig:
         load_dataset_path=str(config.get("load_dataset_path", "")),
         offline_only=bool(config.get("offline_only", False)),
         offline_updates=int(config.get("offline_updates", 0)),
+        replay_until_convergence=bool(config.get("replay_until_convergence", False)),
+        convergence_tol=float(config.get("convergence_tol", 1e-3)),
+        max_replay_iters=int(config.get("max_replay_iters", 100)),
     )
 
 

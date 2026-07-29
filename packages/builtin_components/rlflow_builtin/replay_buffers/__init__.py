@@ -24,6 +24,9 @@ def replay_buffer_components() -> list[ComponentSpec]:
                     "load_dataset_path": {"type": "string"},
                     "offline_only": {"type": "boolean"},
                     "offline_updates": {"type": "integer", "minimum": 0},
+                    "replay_until_convergence": {"type": "boolean"},
+                    "convergence_tol": {"type": "number", "exclusiveMinimum": 0.0},
+                    "max_replay_iters": {"type": "integer", "minimum": 1},
                 }
             ),
             defaults={
@@ -35,6 +38,9 @@ def replay_buffer_components() -> list[ComponentSpec]:
                 "load_dataset_path": "",
                 "offline_only": False,
                 "offline_updates": 0,
+                "replay_until_convergence": False,
+                "convergence_tol": 1e-3,
+                "max_replay_iters": 100,
             },
         ),
         ComponentSpec(
