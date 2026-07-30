@@ -1,0 +1,45 @@
+name: 19x19_fourrooms__dqn_rmax_countbasedoracle__hpsearch
+description: Random hyperparameter search over the 19x19 fourrooms dqn_rmax_countbasedoracle workflow (400k-step trials).
+sweep_id: 19x19-fourrooms-dqn-rmax-countbasedoracle-hpsearch
+workflow: ../../workflows/fourrooms/best/dqn_rmax_countbasedoracle.yaml
+method: random
+num_trials: 10
+seed: 0
+metric:
+  name: mean_train_return_last_n
+  goal: maximize
+  last_n: 500
+execution:
+  backend: slurm
+  options:
+    account: aip-machado
+    time: "01:30:00"
+    cpus_per_task: 2
+    mem: 16G
+    modules:
+      - python/3.11
+      - cuda/13.2
+slurm:
+  max_parallel: 10
+  trials_per_task: 1
+  max_array_tasks: 1000
+parameters:
+  train_steps:
+    target: nodes.runner-4.config.train_steps
+    values: [400000]
+  learning_rate:
+    target: nodes.agent-1.config.learning_rate
+    distribution: loguniform
+    minimum: 1.0e-5
+    maximum: 1.0e-3
+  rmax_bonus_threshold:
+    target: nodes.agent-1.config.rmax_bonus_threshold
+    distribution: uniform
+    minimum: 0.3
+    maximum: 0.95
+  count_bonus_exponent:
+    target: nodes.intrinsic_reward-5.config.count_bonus_exponent
+    values: [0.5, 1.0]
+  updates_per_step:
+    target: nodes.replay_buffer-3.config.updates_per_step
+    values: [5, 10, 20]
